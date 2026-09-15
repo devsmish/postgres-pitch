@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 Serhii
+Copyright (c) 2026 devsmish
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+Note on data: This license applies to the source code in this repository
+only. It does not apply to third-party data (football statistics,
+biographies, club and competition data, etc.) used or referenced by this
+project. Such data is sourced from external providers and remains subject
+to their respective licenses and terms of use. See DATA_SOURCES.md for a
+full list of sources and their licensing terms.
