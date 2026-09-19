@@ -1,0 +1,3 @@
+# pgbouncer
+
+Reference pgbouncer.ini.
