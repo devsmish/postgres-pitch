@@ -17,8 +17,8 @@ model, naming conventions, and PR process used throughout the project.
 
 ```
 feature/<short-description>     e.g. feature/docker-compose-cluster
-release/<version>               e.g. release/0.1.0
-hotfix/<version>-<short-desc>   e.g. hotfix/0.1.1-replication-timeout
+release/<version>               e.g. release/v0.1.0
+hotfix/<version>-<short-desc>   e.g. hotfix/v0.1.1-replication-timeout
 docs/<short-description>        e.g. docs/architecture-diagram
 ```
 
@@ -145,13 +145,13 @@ git push -u origin feature/docker-compose-cluster
 ```bash
 git checkout develop
 git pull
-git checkout -b release/0.1.0
+git checkout -b release/v0.1.0
 # bump version references, update CHANGELOG.md, final docs pass
 # open a PR: release/0.1.0 → main
 # after merge: tag the release on main
 git checkout main
 git pull
-git tag -a v0.1.0 -m "Release 0.1.0"
+git tag -a v0.1.0 -m "Release v0.1.0"
 git push origin v0.1.0
 # merge main back into develop so develop has the release commit too
 git checkout develop
@@ -164,9 +164,9 @@ git push
 ```bash
 git checkout main
 git pull
-git checkout -b hotfix/0.1.1-replication-timeout
+git checkout -b hotfix/v0.1.1-replication-timeout
 # ... fix, commit ...
-# open a PR: hotfix/0.1.1-... → main
+# open a PR: hotfix/v0.1.1-... → main
 # after merge, tag v0.1.1, then also merge main back into develop
 ```
 

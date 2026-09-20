@@ -1,5 +1,9 @@
 # postgres-pitch
 
+[![Lint](https://github.com/<your-username>/postgres-pitch/actions/workflows/lint.yml/badge.svg)](https://github.com/<your-username>/postgres-pitch/actions/workflows/lint.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Release](https://img.shields.io/github/v/release/<your-username>/postgres-pitch)](https://github.com/<your-username>/postgres-pitch/releases)
+
 > Production-ready PostgreSQL HA cluster with Patroni, IaC (Terraform +
 > Ansible), full observability stack, and real-world data pipelines —
 > populated with real football data via open APIs.
