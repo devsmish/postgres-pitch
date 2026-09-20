@@ -1,0 +1,10 @@
+# Additional dev tooling that only installs on Linux/macOS/WSL.
+# ansible-lint intentionally refuses to install on native Windows (its
+# maintainers require Linux/macOS/WSL, matching how Ansible itself
+# targets Linux hosts).
+#
+# Usage (Linux/macOS/WSL only):
+#   pip install -r requirements.txt -r requirements-linux.txt
+
+ansible-lint==24.7.0
+ansible-core>=2.15,<2.18

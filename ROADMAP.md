@@ -180,10 +180,17 @@ postgres-pitch/
 │   ├── load_test.py             # pgbench/locust at realistic volumes
 │   ├── failover_test.sh
 │   └── chaos/                   # kill primary, network partition, disk full
+├── .editorconfig
 ├── .pre-commit-config.yaml
+├── .sqlfluff
 ├── .env.example
 ├── .gitignore
+├── CHANGELOG.md
+├── CONTRIBUTING.md
 ├── LICENSE
+├── Makefile
+├── requirements.txt
+├── requirements-linux.txt
 ├── DATA_SOURCES.md
 ├── ROADMAP.md
 └── README.md
@@ -193,10 +200,14 @@ postgres-pitch/
 
 ## 6. Roadmap by Iteration (git flow)
 
-### Iteration 0 — Bootstrap
-- [ ] `feat: init repo structure, README skeleton, ROADMAP, architecture.md (target)`
-- [ ] Set up `.pre-commit-config.yaml` (detect-private-keys, terraform fmt)
-- [ ] `.env.example`, `.gitignore`
+### Iteration 0 — Bootstrap ✅ (released as v0.1.0)
+- [x] `feat: init repo structure, README skeleton, ROADMAP, architecture.md (target)`
+- [x] Set up `.pre-commit-config.yaml` (detect-private-keys, terraform fmt)
+- [x] `.env.example`, `.gitignore`
+- [x] Initial database schema + ADR 0001
+- [x] Full folder skeleton for all planned components
+- [x] CI lint pipeline (GitHub Actions + pre-commit)
+- [x] `../requirements.txt` and local dev setup docs
 
 ### Iteration 1 — Local cluster skeleton
 - [ ] `feat(docker): 3-node Patroni + etcd + PgBouncer + HAProxy locally`
@@ -292,7 +303,7 @@ postgres-pitch/
 ## 9. Documentation Discipline
 
 - **Upfront:** repo folder structure (empty dirs with `.gitkeep` are fine),
-  this `ROADMAP.md`, `docs/architecture.md` as the
+  this `PROJECT_PLAN.md` / `ROADMAP.md`, `docs/architecture.md` as the
   target picture with status markers
 - **As you go:** README (only what actually works), ADRs (written at the
   moment a decision is made), detailed docs per service, `DATA_SOURCES.md`
