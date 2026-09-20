@@ -1,0 +1,17 @@
+# Cross-platform development tooling — works on Windows, macOS, and Linux.
+# Matches versions pinned in .pre-commit-config.yaml and
+# .github/workflows/lint.yml, so local runs behave the same as CI.
+#
+# Usage MacOS:
+#   python3 -m venv .venv
+#   source .venv/bin/activate       # .venv\Scripts\activate on Windows
+#   pip install -r requirements.txt
+#   pre-commit install
+#
+# Windows users: ansible-lint is NOT included here — see
+# requirements-linux.txt and CONTRIBUTING.md for why, and how to
+# still run it (via WSL2, recommended, or CI).
+
+pre-commit==3.8.0
+sqlfluff==3.1.0
+ruff==0.5.6

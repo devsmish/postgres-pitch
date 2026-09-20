@@ -55,6 +55,78 @@ docs: add disaster recovery runbook
 Each commit should represent one logical change. Squash-merge feature
 branches into `develop` so `develop`'s history stays readable.
 
+## Local Development Setup
+
+Linters run automatically in CI (`.github/workflows/lint.yml`), but running
+them locally before pushing catches issues sooner. Set up a virtual
+environment pinned to the same tool versions used in CI:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate       # .venv\Scripts\activate on Windows
+pip install -r requirements-dev.txt
+pre-commit install              # runs the hooks automatically on every commit
+```
+
+> **Windows users:** `ansible-lint` does not install on native Windows —
+> its maintainers require Linux, macOS, or WSL (consistent with Ansible
+> itself targeting Linux hosts). `../requirements-dev.txt` is Windows-safe
+> and does **not** include it; `ansible-lint`/`ansible-core` live in
+> `../requirements-linux.txt` instead.
+>
+> Since this project also uses Ansible, Docker Compose, and later
+> Terraform, developing inside **WSL2** is recommended:
+> ```powershell
+> wsl --install -d Ubuntu-24.04
+> ```
+> Inside WSL, install both files:
+> ```bash
+> pip install -r requirements.txt -r requirements-linux.txt
+> ```
+>
+> If you'd rather stay on native Windows for now, just install
+> `../requirements-dev.txt` and rely on CI to catch Ansible issues; `pre-commit
+> run --all-files` will still try to run `ansible-lint` via its own
+> isolated environment and fail the same way, so skip it explicitly:
+> ```powershell
+> $env:SKIP="ansible-lint"; pre-commit run --all-files
+> ```
+
+To run everything manually against the whole repo:
+
+```bash
+pre-commit run --all-files
+```
+
+To run a single hook only (useful when iterating on one file type):
+
+```bash
+pre-commit run sqlfluff-lint --all-files
+pre-commit run ansible-lint --all-files
+pre-commit run ruff --all-files
+```
+
+Or call the tools directly, without going through pre-commit — matches
+what CI runs, but gives more control (e.g. auto-fixing):
+
+```bash
+# SQL — lint, or auto-fix formatting issues
+sqlfluff lint db/schema/*.sql
+sqlfluff fix db/schema/*.sql
+
+# Ansible — lint roles and playbooks
+ansible-lint ansible/
+
+# Python — lint, or auto-fix + format
+ruff check scripts/
+ruff check scripts/ --fix
+ruff format scripts/
+```
+
+`../requirements-dev.txt` pins tooling only (pre-commit, sqlfluff, ansible-lint,
+ruff). Runtime dependencies for the ETL scripts live in `requirements.txt`,
+introduced in Iteration 2 once `scripts/etl/` has actual code.
+
 ## Workflow
 
 ### Starting a new feature
