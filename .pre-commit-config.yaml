@@ -22,6 +22,8 @@ repos:
     hooks:
       - id: ansible-lint
         files: ^ansible/
+        additional_dependencies:
+          - ansible-core>=2.15,<2.18
 
   - repo: https://github.com/sqlfluff/sqlfluff
     rev: 3.1.0
