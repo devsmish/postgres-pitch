@@ -32,6 +32,9 @@ override.tf.json
 # --- Docker ---
 *.log
 
+# --- Docker Compose local data (default DATA_DIR) ---
+docker-compose/data/
+
 # --- OS / editor ---
 .DS_Store
 .idea/
