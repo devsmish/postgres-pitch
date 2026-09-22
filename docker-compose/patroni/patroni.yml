@@ -1,0 +1,62 @@
+# Shared Patroni configuration for all postgres-pitch cluster nodes.
+#
+# Node identity, network addresses, DCS endpoints, and credentials are
+# intentionally NOT set here — they come entirely from PATRONI_* environment
+# variables set per service in docker-compose.yml.
+# This file only holds settings that are the same across every node:
+# bootstrap behavior, postgresql.conf parameters, and pg_hba rules.
+
+bootstrap:
+  # Runs once, right after the first node initializes the cluster — creates
+  # the application database (POSTGRES_DB). Patroni itself only creates the
+  # default 'postgres' database; unlike the official postgres image's
+  # entrypoint, it does not read POSTGRES_DB on its own.
+  post_bootstrap: /home/postgres/post_bootstrap.sh
+
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576
+    # A synchronous replica guarantees zero data loss on failover, at the
+    # cost of write latency — the durability/latency trade-off recorded as
+    # an ADR once the cluster is verified end to end (see ROADMAP.md,
+    # Iteration 1).
+    synchronous_mode: true
+    postgresql:
+      use_pg_rewind: true
+      use_slots: true
+      parameters:
+        wal_level: replica
+        hot_standby: "on"
+        max_wal_senders: 10
+        max_replication_slots: 10
+        wal_keep_size: 128MB
+        max_connections: 100
+
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+
+  # Development-only pg_hba: trusts connections from the whole compose
+  # network. This is intentionally permissive for local iteration and is
+  # tightened in Iteration 5 (Security) — see ansible/roles/security/.
+  #
+  # "replicator" below is a literal role name, NOT an env var — Patroni's
+  # pg_hba does not support ${VAR} substitution. It MUST match
+  # POSTGRES_REPLICATION_USER in .env exactly. If you change one, change
+  # the other, or replication will fail with "no pg_hba.conf entry for
+  # replication connection".
+  pg_hba:
+    - host replication replicator 0.0.0.0/0 md5
+    - host all all 0.0.0.0/0 md5
+
+postgresql:
+  use_unix_socket: true
+  pgpass: /tmp/pgpass
+
+tags:
+  nofailover: false
+  noloadbalance: false
+  clonefrom: false
+  nosync: false
