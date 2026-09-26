@@ -16,5 +16,12 @@ set -euo pipefail
 
 mkdir -p /home/postgres/data
 chown -R postgres:postgres /home/postgres
+# initdb (used by the leader) always forces 0700 on PGDATA itself as part
+# of its own initialization — but pg_basebackup (used by replicas to
+# clone from the leader) does NOT fix the permissions of the top-level
+# target directory, only the files it writes inside it. Without this,
+# replicas fail to start with "data directory has invalid permissions"
+# even though pg_basebackup itself completed successfully.
+chmod 0700 /home/postgres/data
 
 exec gosu postgres patroni "$@"
