@@ -1,0 +1,203 @@
+# Local development stack: 3-node etcd (DCS) + 3-node Patroni-managed
+# PostgreSQL cluster (1 primary, 1 sync replica, 1 async replica — see
+# patroni/patroni.yml for the synchronous_mode rationale).
+#
+# PgBouncer and HAProxy are added in a follow-up PR (see ROADMAP.md,
+# Iteration 1) — this file is intentionally scoped to the database layer.
+#
+# Data storage: every node's data directory is a BIND MOUNT to
+# ${DATA_DIR}/<node>, not a Docker named volume. This keeps database
+# storage on a disk/path you control instead of inside Docker Desktop's
+# internal VM disk (which otherwise grows unbounded on the system drive —
+# see docker-compose/README.md for why this matters and how to set it).
+#
+# Image: the three PostgreSQL nodes share one image, built once. Only
+# postgresql0 declares a `build:` block; postgresql1 and postgresql2
+# reference the same `image: postgres-pitch-patroni:local` tag with no
+# build section of their own. This is the standard "build once, deploy
+# many" pattern applied locally — it also avoids Compose building the
+# identical Dockerfile three times in parallel (which is what produced a
+# corrupted build context in practice — see docker-compose/README.md).
+#
+# Startup ordering: PostgreSQL nodes wait for etcd to be genuinely
+# quorate (via healthcheck), not just "containers started" — see the
+# etcd healthcheck comment below for why this matters.
+#
+# Usage (run from this directory):
+#   cp ../.env.example ../.env   # if not already done, then edit passwords
+#   docker compose --env-file ../.env up -d --build
+#   docker compose --env-file ../.env logs -f
+#
+# Or via the repo-root Makefile: `make up` / `make down` / `make logs`.
+
+networks:
+  postgres-pitch:
+
+x-etcd-common: &etcd-common
+  # Official etcd project image. NOTE: Bitnami's versioned etcd images are
+  # no longer freely distributed (moved behind a paid subscription in
+  # September 2025) — do not switch to bitnami/etcd.
+  image: gcr.io/etcd-development/etcd:${ETCD_VERSION:-v3.5.17}
+  networks: [postgres-pitch]
+  environment:
+    ETCDCTL_API: "3"
+  restart: unless-stopped
+  healthcheck:
+    # "endpoint health" performs a linearizable read, which only succeeds
+    # once this node is an established part of a Raft quorum — unlike a
+    # plain "is the process running" check, this genuinely gates on the
+    # etcd cluster being usable, not just started. Without this, Patroni
+    # nodes can race against a not-yet-quorate etcd cluster on cold
+    # start and independently initdb, producing mismatched system IDs
+    # across nodes (each one bootstraps its own, incompatible cluster).
+    test: ["CMD", "etcdctl", "--endpoints=http://localhost:2379", "endpoint", "health"]
+    interval: 5s
+    timeout: 5s
+    retries: 5
+    start_period: 15s
+
+services:
+  etcd1:
+    <<: *etcd-common
+    container_name: postgres-pitch-etcd1
+    hostname: etcd1
+    volumes:
+      - ${DATA_DIR:-./data}/etcd1:/etcd-data
+    command: >
+      etcd --name etcd1
+      --data-dir /etcd-data
+      --initial-advertise-peer-urls http://etcd1:2380
+      --listen-peer-urls http://0.0.0.0:2380
+      --advertise-client-urls http://etcd1:2379
+      --listen-client-urls http://0.0.0.0:2379
+      --initial-cluster etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      --initial-cluster-state new
+      --initial-cluster-token ${ETCD_CLUSTER_TOKEN}
+
+  etcd2:
+    <<: *etcd-common
+    container_name: postgres-pitch-etcd2
+    hostname: etcd2
+    volumes:
+      - ${DATA_DIR:-./data}/etcd2:/etcd-data
+    command: >
+      etcd --name etcd2
+      --data-dir /etcd-data
+      --initial-advertise-peer-urls http://etcd2:2380
+      --listen-peer-urls http://0.0.0.0:2380
+      --advertise-client-urls http://etcd2:2379
+      --listen-client-urls http://0.0.0.0:2379
+      --initial-cluster etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      --initial-cluster-state new
+      --initial-cluster-token ${ETCD_CLUSTER_TOKEN}
+
+  etcd3:
+    <<: *etcd-common
+    container_name: postgres-pitch-etcd3
+    hostname: etcd3
+    volumes:
+      - ${DATA_DIR:-./data}/etcd3:/etcd-data
+    command: >
+      etcd --name etcd3
+      --data-dir /etcd-data
+      --initial-advertise-peer-urls http://etcd3:2380
+      --listen-peer-urls http://0.0.0.0:2380
+      --advertise-client-urls http://etcd3:2379
+      --listen-client-urls http://0.0.0.0:2379
+      --initial-cluster etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      --initial-cluster-state new
+      --initial-cluster-token ${ETCD_CLUSTER_TOKEN}
+
+  postgresql0:
+    # postgresql0 is the single build owner for this image — postgresql1
+    # and postgresql2 below reference the same tag via `image:` only,
+    # with no `build:` block of their own. This means `docker compose
+    # build` (or `up --build`) builds the image exactly once, not three
+    # times in parallel for three identical Dockerfiles. It's also the
+    # right habit for later: Iteration 8 (Terraform/cloud) will build
+    # this image once in CI and reference it by tag everywhere, exactly
+    # like this, just from a registry instead of the local Docker image
+    # cache.
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: postgres-pitch-patroni:local
+    container_name: postgres-pitch-postgresql0
+    hostname: postgresql0
+    networks: [postgres-pitch]
+    depends_on:
+      etcd1:
+        condition: service_healthy
+      etcd2:
+        condition: service_healthy
+      etcd3:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ${DATA_DIR:-./data}/postgresql0:/home/postgres/data
+    ports:
+      - "5433:5432"   # direct access to this node — dev/debug only
+      - "8009:8008"   # Patroni REST API
+    environment: &patroni-common-env
+      PATRONI_SCOPE: ${PATRONI_SCOPE:-postgres-pitch-cluster}
+      PATRONI_ETCD3_HOSTS: etcd1:2379,etcd2:2379,etcd3:2379
+      PATRONI_POSTGRESQL_DATA_DIR: /home/postgres/data
+      PATRONI_SUPERUSER_USERNAME: ${POSTGRES_USER}
+      PATRONI_SUPERUSER_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres_pitch}
+      PATRONI_REPLICATION_USERNAME: ${POSTGRES_REPLICATION_USER}
+      PATRONI_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      PATRONI_LOG_LEVEL: INFO
+      PATRONI_NAME: postgresql0
+      PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
+      PATRONI_RESTAPI_CONNECT_ADDRESS: postgresql0:8008
+      PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: postgresql0:5432
+
+  postgresql1:
+    image: postgres-pitch-patroni:local
+    container_name: postgres-pitch-postgresql1
+    hostname: postgresql1
+    networks: [postgres-pitch]
+    depends_on:
+      etcd1:
+        condition: service_healthy
+      etcd2:
+        condition: service_healthy
+      etcd3:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ${DATA_DIR:-./data}/postgresql1:/home/postgres/data
+    ports:
+      - "5434:5432"
+      - "8010:8008"
+    environment:
+      <<: *patroni-common-env
+      PATRONI_NAME: postgresql1
+      PATRONI_RESTAPI_CONNECT_ADDRESS: postgresql1:8008
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: postgresql1:5432
+
+  postgresql2:
+    image: postgres-pitch-patroni:local
+    container_name: postgres-pitch-postgresql2
+    hostname: postgresql2
+    networks: [postgres-pitch]
+    depends_on:
+      etcd1:
+        condition: service_healthy
+      etcd2:
+        condition: service_healthy
+      etcd3:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ${DATA_DIR:-./data}/postgresql2:/home/postgres/data
+    ports:
+      - "5435:5432"
+      - "8011:8008"
+    environment:
+      <<: *patroni-common-env
+      PATRONI_NAME: postgresql2
+      PATRONI_RESTAPI_CONNECT_ADDRESS: postgresql2:8008
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: postgresql2:5432

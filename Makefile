@@ -40,11 +40,11 @@ leader:
 
 NODE ?= postgresql0
 psql:
-	docker exec -it postgres-pitch-$(NODE) psql -U $${POSTGRES_USER:-postgres_pitch_admin} -d $${POSTGRES_DB:-postgres_pitch}
+	docker exec -it postgres-pitch-$(NODE) psql -U $${POSTGRES_USER} -d $${POSTGRES_DB}
 
 schema:
 	@echo "Applying schema to the current primary via postgresql0:5433..."
-	psql "postgresql://$${POSTGRES_USER:-postgres_pitch_admin}@localhost:5433/$${POSTGRES_DB:-postgres_pitch}" \
+	psql "postgresql://$${POSTGRES_USER}@localhost:5433/$${POSTGRES_DB}" \
 		-f db/schema/001_initial_schema.sql
 
 lint:
