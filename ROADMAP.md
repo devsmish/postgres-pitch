@@ -284,7 +284,7 @@ scope — tracked here so they don't get lost between iterations.
       an explicit `.gitattributes`, line endings depend on each machine's
       local git config, which is fragile — a CRLF-mangled shell script
       copied into a Linux container fails at startup with
-      `/bin/bash^M: bad interpreter`. See PR for #9 for details.
+      `/bin/bash^M: bad interpreter`. See PR for #14 for details.
 
 ---
 
