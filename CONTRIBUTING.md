@@ -6,7 +6,7 @@ model, naming conventions, and PR process used throughout the project.
 ## Branching Model
 
 | Branch | Purpose | Branches from | Merges into |
-|---|---|---|---|
+|--------|---------|---------------|-------------|
 | `main` | Always stable, deployable. Every commit on `main` is a tagged release. | — | — |
 | `develop` | Main integration branch. All finished features land here first. | `main` (once, at project start) | — |
 | `feature/*` | A single feature or task. | `develop` | `develop` |
@@ -17,8 +17,8 @@ model, naming conventions, and PR process used throughout the project.
 
 ```
 feature/<short-description>     e.g. feature/docker-compose-cluster
-release/<version>               e.g. release/v0.1.0
-hotfix/<version>-<short-desc>   e.g. hotfix/v0.1.1-replication-timeout
+release/<version>               e.g. release/0.1.0
+hotfix/<version>-<short-desc>   e.g. hotfix/0.1.1-replication-timeout
 docs/<short-description>        e.g. docs/architecture-diagram
 ```
 
@@ -57,52 +57,75 @@ branches into `develop` so `develop`'s history stays readable.
 
 ## Local Development Setup
 
+> **Line endings:** this repository enforces LF line endings via
+> `.gitattributes` (shell scripts in particular must stay LF — they run
+> inside Linux containers, and a CRLF-mangled script fails at container
+> startup with `/bin/bash^M: bad interpreter`). As a second line of
+> defense, also set this locally, especially on Windows:
+> ```bash
+> git config core.autocrlf input
+> ```
+
 Linters run automatically in CI (`.github/workflows/lint.yml`), but running
-them locally before pushing catches issues sooner. Set up a virtual
-environment pinned to the same tool versions used in CI:
+them locally before pushing catches issues sooner. This project is
+developed across multiple OSes (Windows and macOS at different times) —
+the setup below is written to behave the same everywhere, with
+platform-specific notes called out explicitly rather than assumed.
+
+Set up a virtual environment pinned to the same tool versions used in CI:
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate       # .venv\Scripts\activate on Windows
-pip install -r requirements-dev.txt
+source .venv/bin/activate       # .venv\Scripts\activate on Windows (PowerShell/cmd)
+pip install -r requirements.txt
 pre-commit install              # runs the hooks automatically on every commit
 ```
 
-> **Windows users:** `ansible-lint` does not install on native Windows —
-> its maintainers require Linux, macOS, or WSL (consistent with Ansible
-> itself targeting Linux hosts). `../requirements-dev.txt` is Windows-safe
-> and does **not** include it; `ansible-lint`/`ansible-core` live in
-> `../requirements-linux.txt` instead.
->
-> Since this project also uses Ansible, Docker Compose, and later
-> Terraform, developing inside **WSL2** is recommended:
-> ```powershell
-> wsl --install -d Ubuntu-24.04
-> ```
-> Inside WSL, install both files:
-> ```bash
-> pip install -r requirements.txt -r requirements-linux.txt
-> ```
->
-> If you'd rather stay on native Windows for now, just install
-> `../requirements-dev.txt` and rely on CI to catch Ansible issues; `pre-commit
-> run --all-files` will still try to run `ansible-lint` via its own
-> isolated environment and fail the same way, so skip it explicitly:
-> ```powershell
-> $env:SKIP="ansible-lint"; pre-commit run --all-files
-> ```
+`ansible-lint` is deliberately **not** part of `.pre-commit-config.yaml`
+(the config `pre-commit install` uses as the local git hook) — it lives
+in a separate `.pre-commit-config-ansible.yaml`. This means `git commit`
+never tries to install or run it, on any OS, and never fails because of
+it. It's run explicitly instead:
+
+```bash
+pip install -r requirements-ansible.txt
+pre-commit run --all-files -c .pre-commit-config-ansible.yaml
+```
+
+> **Why a separate config, not just a Windows workaround:** `ansible-lint`
+> refuses to install on native Windows entirely (its maintainers require
+> Linux/macOS/WSL). It installs and runs fine on macOS/Linux with no
+> special handling — but pre-commit provisions *every* configured hook's
+> environment eagerly on first run, even for files nothing in the current
+> commit touches. Keeping it in the main config would mean every commit
+> on Windows fails outright, which is worse than "run it separately."
+> Splitting it out gives identical local behavior on every OS: the git
+> hook never touches Ansible, and `.github/workflows/lint.yml` runs both
+> configs in CI regardless of what OS the change was authored on.
+
+> **Windows-only note:** since this project also uses Docker Compose and
+> later Terraform/Ansible more heavily, developing inside **WSL2** is
+> recommended (`wsl --install -d Ubuntu-24.04`) for a Linux-like shell —
+> but it is not required for the above to work; `ansible-lint` just won't
+> run locally on native Windows regardless (CI still catches it).
+
+> **`make` availability:** the Makefile targets need a POSIX-ish shell
+> and GNU Make. macOS and Linux have `make` available out of the box (or
+> via `xcode-select --install` / your package manager). On native
+> Windows, use WSL2, Git Bash, or `choco install make`.
 
 To run everything manually against the whole repo:
 
 ```bash
-pre-commit run --all-files
+pre-commit run --all-files                                  # main config
+pre-commit run --all-files -c .pre-commit-config-ansible.yaml  # Linux/WSL only
 ```
 
 To run a single hook only (useful when iterating on one file type):
 
 ```bash
 pre-commit run sqlfluff-lint --all-files
-pre-commit run ansible-lint --all-files
+pre-commit run ansible-lint --all-files -c .pre-commit-config-ansible.yaml
 pre-commit run ruff --all-files
 ```
 
@@ -123,9 +146,11 @@ ruff check scripts/ --fix
 ruff format scripts/
 ```
 
-`../requirements-dev.txt` pins tooling only (pre-commit, sqlfluff, ansible-lint,
-ruff). Runtime dependencies for the ETL scripts live in `requirements.txt`,
-introduced in Iteration 2 once `scripts/etl/` has actual code.
+`requirements.txt` pins cross-platform tooling (pre-commit, sqlfluff,
+ruff). `requirements-ansible.txt` pins `ansible-lint`/`ansible-core`
+separately (see the note above on why). Runtime dependencies for the ETL
+scripts live in `requirements.txt`, introduced in Iteration 2 once
+`scripts/etl/` has actual code.
 
 ## Workflow
 
@@ -145,13 +170,13 @@ git push -u origin feature/docker-compose-cluster
 ```bash
 git checkout develop
 git pull
-git checkout -b release/v0.1.0
+git checkout -b release/0.1.0
 # bump version references, update CHANGELOG.md, final docs pass
 # open a PR: release/0.1.0 → main
 # after merge: tag the release on main
 git checkout main
 git pull
-git tag -a v0.1.0 -m "Release v0.1.0"
+git tag -a v0.1.0 -m "Release 0.1.0"
 git push origin v0.1.0
 # merge main back into develop so develop has the release commit too
 git checkout develop
@@ -164,9 +189,9 @@ git push
 ```bash
 git checkout main
 git pull
-git checkout -b hotfix/v0.1.1-replication-timeout
+git checkout -b hotfix/0.1.1-replication-timeout
 # ... fix, commit ...
-# open a PR: hotfix/v0.1.1-... → main
+# open a PR: hotfix/0.1.1-... → main
 # after merge, tag v0.1.1, then also merge main back into develop
 ```
 

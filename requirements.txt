@@ -9,7 +9,7 @@
 #   pre-commit install
 #
 # Windows users: ansible-lint is NOT included here — see
-# requirements-linux.txt and CONTRIBUTING.md for why, and how to
+# requirements-ansible.txt and CONTRIBUTING.md for why, and how to
 # still run it (via WSL2, recommended, or CI).
 
 pre-commit==3.8.0

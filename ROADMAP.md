@@ -184,13 +184,14 @@ postgres-pitch/
 ├── .pre-commit-config.yaml
 ├── .sqlfluff
 ├── .env.example
+├── .gitattribute
 ├── .gitignore
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 ├── LICENSE
 ├── Makefile
 ├── requirements.txt
-├── requirements-linux.txt
+├── requirements-ansible.txt
 ├── DATA_SOURCES.md
 ├── ROADMAP.md
 └── README.md
@@ -273,6 +274,18 @@ postgres-pitch/
 - [ ] Final README, badges, screenshots
 - [ ] Pin repository, fill in About section/tags on GitHub
 
+### Chores / Technical Debt
+
+Cross-cutting hygiene tasks not tied to a single iteration's functional
+scope — tracked here so they don't get lost between iterations.
+
+- [ ] `chore: enforce LF line endings via .gitattributes` — GitHub issue #9.
+      Development happens across multiple OSes (Windows, macOS); without
+      an explicit `.gitattributes`, line endings depend on each machine's
+      local git config, which is fragile — a CRLF-mangled shell script
+      copied into a Linux container fails at startup with
+      `/bin/bash^M: bad interpreter`. See PR for #14 for details.
+
 ---
 
 ## 7. Scheduled Operational Jobs
@@ -303,7 +316,7 @@ postgres-pitch/
 ## 9. Documentation Discipline
 
 - **Upfront:** repo folder structure (empty dirs with `.gitkeep` are fine),
-  this `PROJECT_PLAN.md` / `ROADMAP.md`, `docs/architecture.md` as the
+  this `ROADMAP.md`, `docs/architecture.md` as the
   target picture with status markers
 - **As you go:** README (only what actually works), ADRs (written at the
   moment a decision is made), detailed docs per service, `DATA_SOURCES.md`
