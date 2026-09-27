@@ -81,7 +81,7 @@ pre-commit install              # runs the hooks automatically on every commit
 > ```
 > Inside WSL, install both files:
 > ```bash
-> pip install -r requirements.txt -r requirements-linux.txt
+> pip install -r requirements.txt -r requirements-ansible.txt
 > ```
 >
 > If you'd rather stay on native Windows for now, just install
