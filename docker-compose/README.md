@@ -136,6 +136,32 @@ SELECT * FROM replication_check;
 
 The row should be visible on both replicas within a second or two.
 
+## Verify automatic failover
+
+```bash
+bash tests/failover_test.sh
+```
+
+This kills the current primary's container (a genuine `docker kill`, not
+a graceful shutdown), measures how long it takes Patroni to elect a new
+leader, and confirms the promoted node was the **synchronous** standby —
+i.e. a zero-data-loss failover, not just "some node became leader." See
+[ADR 0002](../docs/decisions/0002-synchronous-replication.md) for why
+that distinction matters and the durability/latency trade-off behind it.
+
+Example output from a real run:
+
+```
+Old leader:            postgresql0 (killed)
+New leader:            postgresql1
+Failover time:         28s (container kill -> new leader visible)
+Promoted node check:   PASS — the synchronous standby was promoted
+                       (zero-data-loss failover, as designed)
+```
+
+The script restarts the killed node afterwards so it rejoins the cluster
+as a replica — confirm with `make status` a few seconds later.
+
 ## Stop / reset
 
 ```bash

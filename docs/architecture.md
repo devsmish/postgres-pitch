@@ -36,8 +36,8 @@ iteration-by-iteration build order, see [ROADMAP.md](../ROADMAP.md).
 
 | Component | Role | Status |
 |---|---|---|
-| PostgreSQL (1 Primary + 1 Sync Replica + 1 Async Replica) | Data layer | 📋 |
-| Patroni + etcd | Cluster orchestration, automatic failover | 📋 |
+| PostgreSQL (1 Primary + 1 Sync Standby + 1 Async Replica) | Data layer | ✅ verified locally (Docker Compose) — automatic failover confirmed, see [ADR 0002](./decisions/0002-synchronous-replication.md) |
+| Patroni + etcd | Cluster orchestration, automatic failover | ✅ verified locally — see `tests/failover_test.sh` |
 | PgBouncer | Connection pooling | 📋 |
 | HAProxy | Routing to current primary | 📋 |
 | pgBackRest | Backups, point-in-time recovery | 📋 |
@@ -45,7 +45,7 @@ iteration-by-iteration build order, see [ROADMAP.md](../ROADMAP.md).
 | Terraform | Cloud infrastructure provisioning | 📋 |
 | Ansible | Configuration management | 📋 |
 | Python ETL scripts | Football data ingestion and sync | 📋 |
-| Database schema | Reference data, clubs, players, matches | ✅ (initial DDL, see `../db/schema/001_initial_schema.sql`) |
+| Database schema | Reference data, clubs, players, matches | ✅ (initial DDL, see `db/schema/001_initial_schema.sql`) |
 
 ## Data Flow
 
@@ -67,6 +67,7 @@ iteration-by-iteration build order, see [ROADMAP.md](../ROADMAP.md).
 Individual decisions and their trade-offs are recorded as ADRs in
 [docs/decisions/](./decisions/):
 
-- [ADR 0001 — Schema design decisions](../skeleton/docs/decisions/0001-schema-design.md)
+- [ADR 0001 — Schema design decisions](./decisions/0001-schema-design.md)
+- [ADR 0002 — Synchronous replication trade-off](./decisions/0002-synchronous-replication.md)
 
 New ADRs are added as decisions are made, not written retroactively.
