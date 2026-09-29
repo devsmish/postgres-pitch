@@ -1,4 +1,4 @@
-.PHONY: help up down reset logs status leader psql schema lint failover-test
+.PHONY: help up down reset logs status leader psql schema lint failover-test access-test
 
 help:
 	@echo "Available targets:"
@@ -12,6 +12,7 @@ help:
 	@echo "  schema         - apply the bootstrap schema to the current primary"
 	@echo "  lint           - run pre-commit against all files"
 	@echo "  failover-test  - run the automated failover verification script"
+	@echo "  access-test    - verify HAProxy routing and role-based access (incl. switchover)"
 
 up:
 	cd docker-compose && docker compose --env-file ../.env up -d --build
@@ -40,11 +41,11 @@ leader:
 
 NODE ?= postgresql0
 psql:
-	docker exec -it postgres-pitch-$(NODE) psql -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+	docker exec -it postgres-pitch-$(NODE) psql -U $${POSTGRES_USER:-postgres_pitch_admin} -d $${POSTGRES_DB:-postgres_pitch}
 
 schema:
 	@echo "Applying schema to the current primary via postgresql0:5433..."
-	psql "postgresql://$${POSTGRES_USER}@localhost:5433/$${POSTGRES_DB}" \
+	psql "postgresql://$${POSTGRES_USER:-postgres_pitch_admin}@localhost:5433/$${POSTGRES_DB:-postgres_pitch}" \
 		-f db/schema/001_initial_schema.sql
 
 lint:
@@ -52,3 +53,6 @@ lint:
 
 failover-test:
 	bash tests/failover_test.sh
+
+access-test:
+	bash tests/access_patterns_test.sh
