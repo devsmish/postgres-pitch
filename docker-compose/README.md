@@ -4,8 +4,9 @@ Local development stack for the PostgreSQL HA cluster: 3-node etcd (the
 distributed configuration store) + 3-node PostgreSQL managed by Patroni
 (1 primary, 1 sync replica, 1 async replica).
 
-PgBouncer and HAProxy are added in a follow-up PR — this stack is
-currently scoped to the database layer only.
+Clients don't talk to the nodes directly: **HAProxy** (routing) and
+**PgBouncer** (connection pooling) sit in front of the cluster — see
+[Connect](#connect) below and [docs/access-patterns.md](../docs/access-patterns.md).
 
 ## Prerequisites
 
@@ -59,9 +60,14 @@ docker compose --env-file ../.env up -d --build
 > reference the same `image: postgres-pitch-patroni:local` tag with no
 > build section of their own. This is the "build once, deploy many"
 > pattern applied locally: the image is built exactly once and all three
-> nodes run the byte-identical result. Iteration 8 (Terraform/cloud) will
-> follow the same pattern for real: build once in CI, push a tagged image,
-> every node pulls it — this is the local equivalent of that habit.
+> nodes run the byte-identical result, rather than Compose building the
+> same Dockerfile three times in parallel. It's also what caused a real
+> build-context bug during development (`failed to read dockerfile`,
+> `transferring dockerfile: 2B`) — building three identical parallel
+> targets from one context was the actual root cause, not a Windows- or
+> Bake-specific issue. Iteration 8 (Terraform/cloud) will follow the same
+> pattern for real: build once in CI, push a tagged image, every node
+> pulls it — this is the local equivalent of that habit.
 
 First start takes a minute or two (builds the Patroni image, initializes
 the primary, streams a base backup to both replicas).
@@ -92,18 +98,42 @@ make leader
 
 ## Connect
 
-Each node is also reachable directly from the host for debugging (not how
-the application will connect once PgBouncer/HAProxy are added):
+Applications use one of two HAProxy endpoints (flow: client → HAProxy →
+PgBouncer → PostgreSQL). Both keep working across a failover or
+switchover with no change on the client side:
 
-| Node | Postgres port | Patroni REST API |
+| Endpoint | Host port | Routes to |
 |---|---|---|
-| postgresql0 | localhost:5433 | localhost:8009 |
-| postgresql1 | localhost:5434 | localhost:8010 |
-| postgresql2 | localhost:5435 | localhost:8011 |
+| **write** | `localhost:5000` | the current primary only |
+| **read-only** | `localhost:5001` | healthy replicas, round-robin |
+
+Connect as the demo roles (passwords from your `.env`):
 
 ```bash
-make psql                  # connects to postgresql0
-make psql NODE=postgresql1 # connects to a specific node
+# writes -> primary
+psql "postgresql://etl_writer:<ETL_WRITER_PASSWORD>@localhost:5000/postgres_pitch"
+# reads -> a replica
+psql "postgresql://analytics_readonly:<ANALYTICS_READONLY_PASSWORD>@localhost:5001/postgres_pitch"
+```
+
+HAProxy's stats page shows which servers it considers up:
+<http://localhost:8404/>.
+
+### Direct access (debugging only)
+
+Each node, and each node's PgBouncer, is also reachable directly. This is
+not how applications should connect — it bypasses routing, so what you
+reach depends on which node currently holds which role.
+
+| Node | Postgres | Patroni REST API | PgBouncer |
+|---|---|---|---|
+| postgresql0 | `localhost:5433` | `localhost:8009` | `localhost:6432` |
+| postgresql1 | `localhost:5434` | `localhost:8010` | `localhost:6433` |
+| postgresql2 | `localhost:5435` | `localhost:8011` | `localhost:6434` |
+
+```bash
+make psql                  # admin shell on postgresql0
+make psql NODE=postgresql1 # on a specific node
 ```
 
 ## Databases in this cluster
@@ -161,6 +191,20 @@ Promoted node check:   PASS — the synchronous standby was promoted
 
 The script restarts the killed node afterwards so it rejoins the cluster
 as a replica — confirm with `make status` a few seconds later.
+
+## Verify routing and role-based access
+
+```bash
+bash tests/access_patterns_test.sh     # or: make access-test
+```
+
+Checks that the write endpoint always lands on a primary and the
+read-only endpoint on a replica (`pg_is_in_recovery()`), that
+`etl_writer` and `analytics_readonly` can do exactly what they should
+through each endpoint (and fail for the *right* reason when they
+shouldn't — routing vs. grants), then runs `patronictl switchover` and
+repeats everything with the same credentials and ports. Only the node
+behind the endpoints changes. Details: [docs/access-patterns.md](../docs/access-patterns.md).
 
 ## Stop / reset
 

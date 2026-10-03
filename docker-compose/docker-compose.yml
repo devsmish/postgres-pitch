@@ -30,6 +30,8 @@
 #
 # Or via the repo-root Makefile: `make up` / `make down` / `make logs`.
 
+name: football-pitch
+
 networks:
   postgres-pitch:
 
@@ -55,6 +57,14 @@ x-etcd-common: &etcd-common
     timeout: 5s
     retries: 5
     start_period: 15s
+
+x-pgbouncer-common: &pgbouncer-common
+  image: edoburu/pgbouncer:v1.25.1-p0
+  networks: [postgres-pitch]
+  restart: unless-stopped
+  environment: &pgbouncer-common-env
+    DB_USER: ${PGBOUNCER_AUTH_USER}
+    DB_PASSWORD: ${PGBOUNCER_AUTH_PASSWORD}
 
 services:
   etcd1:
@@ -147,8 +157,22 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       PATRONI_REPLICATION_USERNAME: ${POSTGRES_REPLICATION_USER}
       PATRONI_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      # Plain (non-PATRONI_-prefixed) copies for post_bootstrap.sh: Patroni
+      # does not reliably pass PATRONI_-prefixed vars through to the
+      # post_bootstrap subprocess environment (observed empirically —
+      # PATRONI_REPLICATION_PASSWORD came through empty there even though
+      # Patroni itself uses it fine for its own connections). These give
+      # the script a guaranteed, independent way to read the same values.
+      POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
       POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      # Read by post_bootstrap.sh to create pgbouncer_auth (PgBouncer's
+      # auth_query technical role) and the two demo roles used to verify
+      # role-based access through the HAProxy write/read-only endpoints.
+      PGBOUNCER_AUTH_USER: ${PGBOUNCER_AUTH_USER}
+      PGBOUNCER_AUTH_PASSWORD: ${PGBOUNCER_AUTH_PASSWORD}
+      ANALYTICS_READONLY_PASSWORD: ${ANALYTICS_READONLY_PASSWORD}
+      ETL_WRITER_PASSWORD: ${ETL_WRITER_PASSWORD}
       PATRONI_LOG_LEVEL: INFO
       PATRONI_NAME: postgresql0
       PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
@@ -203,3 +227,69 @@ services:
       PATRONI_NAME: postgresql2
       PATRONI_RESTAPI_CONNECT_ADDRESS: postgresql2:8008
       PATRONI_POSTGRESQL_CONNECT_ADDRESS: postgresql2:5432
+  # Colocated 1:1 with each Postgres node (not a single shared pooler) so
+  # that HAProxy can route between them the same way it routes between the
+  # raw Postgres nodes — by health-checking each node's Patroni REST API
+  # and proxying data traffic to that node's own PgBouncer. This keeps the
+  # "HAProxy decides which physical node" ordering (client -> HAProxy ->
+  # PgBouncer -> PostgreSQL) while still giving each node's connections
+  # real pooling.
+  #
+  # edoburu/pgbouncer generates userlist.txt from DB_USER/DB_PASSWORD env
+  # vars at container start (never committed) — used here only for the
+  # ONE technical pgbouncer_auth role; real application roles authenticate
+  # via auth_query (see pgbouncer/pgbouncer*.ini), so they never need a
+  # static userlist.txt entry of their own.
+  pgbouncer0:
+    <<: *pgbouncer-common
+    container_name: postgres-pitch-pgbouncer0
+    hostname: pgbouncer0
+    depends_on: [postgresql0]
+    volumes:
+      - ./pgbouncer/pgbouncer0.ini:/etc/pgbouncer/pgbouncer.ini:ro
+    ports:
+      - "6432:6432"   # direct access to this node's pooler — dev/debug only
+    environment:
+      <<: *pgbouncer-common-env
+      DB_HOST: postgresql0
+
+  pgbouncer1:
+    <<: *pgbouncer-common
+    container_name: postgres-pitch-pgbouncer1
+    hostname: pgbouncer1
+    depends_on: [postgresql1]
+    volumes:
+      - ./pgbouncer/pgbouncer1.ini:/etc/pgbouncer/pgbouncer.ini:ro
+    ports:
+      - "6433:6432"
+    environment:
+      <<: *pgbouncer-common-env
+      DB_HOST: postgresql1
+
+  pgbouncer2:
+    <<: *pgbouncer-common
+    container_name: postgres-pitch-pgbouncer2
+    hostname: pgbouncer2
+    depends_on: [postgresql2]
+    volumes:
+      - ./pgbouncer/pgbouncer2.ini:/etc/pgbouncer/pgbouncer.ini:ro
+    ports:
+      - "6434:6432"
+    environment:
+      <<: *pgbouncer-common-env
+      DB_HOST: postgresql2
+
+  # HAProxy: single entry point, routes write/read-only traffic
+  haproxy:
+    image: haproxy:3.2-alpine
+    container_name: postgres-pitch-haproxy
+    hostname: haproxy
+    networks: [postgres-pitch]
+    restart: unless-stopped
+    depends_on: [pgbouncer0, pgbouncer1, pgbouncer2]
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "5000:5000"   # write endpoint — always the current primary
+      - "5001:5001"   # read-only endpoint — load-balanced across replicas
+      - "8404:8404"   # HAProxy stats page (http://localhost:8404/)
