@@ -23,14 +23,30 @@
 #    role-based access verification.
 # 4. Create the auth_query lookup function PgBouncer uses to authenticate
 #    any role without a static userlist.txt entry per role, and grant
-#    default privileges so tables created later (via \`make schema\`)
+#    default privileges so tables created later (via `make schema`)
 #    automatically pick up the right access for the demo roles.
 set -euo pipefail
 
 CONNSTR="$1"
-APP_DB="${POSTGRES_DB}"
-REPL_USER="${POSTGRES_REPLICATION_USER:-${PATRONI_REPLICATION_USERNAME}}"
-REPL_PASSWORD="${POSTGRES_REPLICATION_PASSWORD:-${PATRONI_REPLICATION_PASSWORD}}"
+APP_DB="${POSTGRES_DB:-postgres_pitch}"
+# Admin (superuser) name. Patroni does NOT pass PATRONI_* variables into
+# the post_bootstrap subprocess, so PATRONI_SUPERUSER_USERNAME is empty
+# here. docker-compose.yml therefore also exports a plain POSTGRES_USER.
+# If that is ever missing, ask the server itself: $1 is a libpq connection
+# string to the freshly created superuser, so current_user is the admin.
+ADMIN_USER="${POSTGRES_USER:-}"
+if [ -z "$ADMIN_USER" ]; then
+  ADMIN_USER="$(psql "$CONNSTR" -Atqc 'select current_user' 2>/dev/null || true)"
+fi
+if [ -z "$ADMIN_USER" ]; then
+  echo "post_bootstrap.sh: no admin username found (checked POSTGRES_USER and current_user via psql)" >&2
+  exit 1
+fi
+# Prefer the plain (non-PATRONI_-prefixed) vars, which are reliably passed
+# to this script; fall back to the PATRONI_-prefixed ones in case that
+# ever changes. See the comment on these vars in docker-compose.yml.
+REPL_USER="${POSTGRES_REPLICATION_USER:-${PATRONI_REPLICATION_USERNAME:-replicator}}"
+REPL_PASSWORD="${POSTGRES_REPLICATION_PASSWORD:-${PATRONI_REPLICATION_PASSWORD:-}}"
 
 if [ -z "$REPL_PASSWORD" ]; then
   echo "post_bootstrap.sh: no replication password found in environment" \
@@ -38,6 +54,12 @@ if [ -z "$REPL_PASSWORD" ]; then
   exit 1
 fi
 
+# Direct bash interpolation, not psql's `:'var'` substitution — that
+# turned out not to work reliably inside a DO $$ ... $$ block (observed:
+# psql sent the literal text ":'repl_user'" to the server instead of
+# substituting it, causing a syntax error). This assumes REPL_USER/
+# REPL_PASSWORD contain no single quotes — true for this project (see
+# .env.example), but worth knowing if that ever changes.
 psql "$CONNSTR" -v ON_ERROR_STOP=1 <<SQL
 DO \$\$
 BEGIN
@@ -115,14 +137,23 @@ END
 SQL
 
 # Everything below is scoped to the application database specifically
-# (the lookup function and grants only make sense there), so connect to
-# it directly rather than whatever default database $CONNSTR points at.
-# Patroni's post_bootstrap connstring is a libpq keyword/value string
-# (e.g. "host=... port=... user=..."), so appending another keyword/value
-# pair overrides dbname if present or sets it if absent.
-APP_CONNSTR="$CONNSTR dbname=${APP_DB}"
+# (the lookup function and grants only make sense there). Connect with
+# the same $CONNSTR Patroni gave us (works regardless of whether it's a
+# keyword/value string or a URI), then switch database with psql's own
+# \c meta-command — reuses the same host/port/user/password, just
+# changes dbname, so it works no matter what format $CONNSTR is in.
+#
+# NOTE: an earlier version of this script tried to build a second
+# connection string by appending "dbname=${APP_DB}" as text onto
+# $CONNSTR. That silently didn't work — Patroni's connstring here isn't
+# guaranteed to be in the keyword/value form that trick assumes — so the
+# function below ended up created in the wrong database, and PgBouncer's
+# auth_query failed with "function public.user_lookup(unknown) does not
+# exist" even though the role itself authenticated fine. \c avoids the
+# guesswork entirely.
+psql "$CONNSTR" -v ON_ERROR_STOP=1 <<SQL
+\c ${APP_DB}
 
-psql "$APP_CONNSTR" -v ON_ERROR_STOP=1 <<SQL
 -- Standard PgBouncer auth_query pattern: a SECURITY DEFINER function so
 -- PgBouncer can look up any role's password hash without being a
 -- superuser itself, and without needing a static userlist.txt entry for
@@ -145,14 +176,14 @@ GRANT EXECUTE ON FUNCTION public.user_lookup(text) TO ${PGBOUNCER_AUTH_USER};
 -- applied yet (see \`make schema\` in the Makefile / ROADMAP Iteration 2).
 -- This way, whatever tables the schema migration creates afterwards
 -- automatically pick up the right grants without re-running anything.
-ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA public
+ALTER DEFAULT PRIVILEGES FOR ROLE ${ADMIN_USER} IN SCHEMA public
   GRANT SELECT ON TABLES TO analytics_readonly;
-ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA public
+ALTER DEFAULT PRIVILEGES FOR ROLE ${ADMIN_USER} IN SCHEMA public
   GRANT INSERT, UPDATE ON TABLES TO etl_writer;
 -- INSERT into a table with a SERIAL/BIGSERIAL column (most of ours) also
 -- needs USAGE on the backing sequence, or it fails with "permission
 -- denied for sequence" even though INSERT on the table itself is granted.
-ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA public
+ALTER DEFAULT PRIVILEGES FOR ROLE ${ADMIN_USER} IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO etl_writer;
 
 -- Also grant on anything that might already exist, for idempotency if

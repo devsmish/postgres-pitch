@@ -30,6 +30,8 @@
 #
 # Or via the repo-root Makefile: `make up` / `make down` / `make logs`.
 
+name: football-pitch
+
 networks:
   postgres-pitch:
 
@@ -161,6 +163,7 @@ services:
       # PATRONI_REPLICATION_PASSWORD came through empty there even though
       # Patroni itself uses it fine for its own connections). These give
       # the script a guaranteed, independent way to read the same values.
+      POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
       POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
       # Read by post_bootstrap.sh to create pgbouncer_auth (PgBouncer's
@@ -276,7 +279,7 @@ services:
       <<: *pgbouncer-common-env
       DB_HOST: postgresql2
 
-  # --- HAProxy: single entry point, routes write/read-only traffic ---------
+  # HAProxy: single entry point, routes write/read-only traffic
   haproxy:
     image: haproxy:3.2-alpine
     container_name: postgres-pitch-haproxy
