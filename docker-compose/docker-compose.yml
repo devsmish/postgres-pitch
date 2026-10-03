@@ -244,7 +244,7 @@ services:
     <<: *pgbouncer-common
     container_name: postgres-pitch-pgbouncer0
     hostname: pgbouncer0
-    depends_on: [ postgresql0 ]
+    depends_on: [postgresql0]
     volumes:
       - ./pgbouncer/pgbouncer0.ini:/etc/pgbouncer/pgbouncer.ini:ro
     ports:
