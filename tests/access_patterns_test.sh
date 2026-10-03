@@ -27,6 +27,13 @@
 # failover_test.sh), and a populated .env in the repo root.
 set -uo pipefail
 
+# Git Bash (MSYS) on Windows rewrites arguments that look like unix paths
+# (e.g. `-c /etc/patroni.yml` becomes `C:/Program Files/Git/etc/patroni.yml`)
+# before docker ever sees them. Those paths are meant for the container, so
+# disable the conversion. Harmless on Linux/macOS/WSL.
+export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL="*"
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Load .env, stripping CRs in case the file was saved with Windows line
@@ -205,9 +212,34 @@ fi
 
 # --- after switchover ------------------------------------------------------
 
-# The read-only endpoint needs at least one healthy replica again — the old
-# primary rejoins as one; give HAProxy's checks a moment to see it.
-sleep 6
+# The read-only endpoint needs healthy replicas again - the old primary
+# rejoins as one, and HAProxy (rise 2 x inter 3s) plus PgBouncer's cached
+# login errors need a moment to settle. Mirror the write-endpoint wait above:
+# poll until the read-only endpoint answers correctly several times in a row
+# (6 = two full round-robin cycles over 3 backends), so one lucky connection
+# to a healthy node cannot hide a backend that is still starting up.
+echo "==> Waiting for the read-only endpoint to serve replicas again..."
+READ_START=$(date +%s)
+READ_STREAK=0
+READ_CONVERGED=""
+while [ $(( $(date +%s) - READ_START )) -lt $TIMEOUT_SECONDS ]; do
+  rec=$(run_sql $READ_PORT analytics_readonly "$ANALYTICS_READONLY_PASSWORD" "SELECT pg_is_in_recovery()" 2>/dev/null || true)
+  if [ "$rec" = "t" ]; then
+    READ_STREAK=$((READ_STREAK + 1))
+  else
+    READ_STREAK=0
+  fi
+  if [ "$READ_STREAK" -ge 6 ]; then
+    READ_CONVERGED=$(( $(date +%s) - START )); break
+  fi
+  sleep 1
+done
+
+if [ -z "$READ_CONVERGED" ]; then
+  fail "read-only endpoint did not stabilise on replicas within ${TIMEOUT_SECONDS}s"
+else
+  pass "read-only endpoint serving replicas again after ${READ_CONVERGED}s (no client reconfiguration)"
+fi
 run_checks "after-switchover"
 
 echo ""
