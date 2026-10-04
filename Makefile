@@ -2,7 +2,7 @@
 
 help:
 	@echo "Available targets:"
-	@echo "  up             - start the local Patroni + etcd cluster"
+	@echo "  up             - start the full local stack and wait until the cluster is healthy"
 	@echo "  down           - stop and remove the local cluster (keeps volumes)"
 	@echo "  reset          - stop and remove the local cluster AND its data"
 	@echo "  logs           - tail logs from all cluster containers"
@@ -15,7 +15,7 @@ help:
 	@echo "  access-test    - verify HAProxy routing and role-based access (incl. switchover)"
 
 up:
-	cd docker-compose && docker compose --env-file ../.env up -d --build
+	bash docker-compose/bootstrap.sh
 
 down:
 	cd docker-compose && docker compose --env-file ../.env down

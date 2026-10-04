@@ -23,6 +23,7 @@ bootstrap:
     # an ADR once the cluster is verified end to end (see ROADMAP.md,
     # Iteration 1).
     synchronous_mode: true
+
     postgresql:
       use_pg_rewind: true
       use_slots: true
@@ -54,6 +55,11 @@ bootstrap:
 postgresql:
   use_unix_socket: true
   pgpass: /tmp/pgpass
+  # pg_basebackup otherwise waits for a *spread* checkpoint on the primary
+  # ("checkpoint starting: force wait"), which took ~97s even on an empty
+  # cluster and made every cold start slow. "fast" forces an immediate one.
+  basebackup:
+    checkpoint: fast
 
 tags:
   nofailover: false

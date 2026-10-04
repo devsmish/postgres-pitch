@@ -48,7 +48,32 @@ From the repository root:
 make up
 ```
 
-Or directly:
+`make up` runs [`../../docker-compose/bootstrap.sh`](../../docker-compose/bootstrap.sh), which starts the stack and
+then **waits until it is actually healthy** instead of returning as soon as
+the containers exist. It polls Patroni's REST API until all three members
+are registered, there is exactly one running leader, the other members are
+`streaming`, and a synchronous standby exists; then it checks that the
+write (`:5000`) and read-only (`:5001`) HAProxy endpoints accept
+connections. On success it prints the endpoints and next steps. If the
+cluster is not healthy within 180 seconds, it prints the last observed
+status plus container diagnostics (including containers stuck in a
+restart loop) and exits non-zero.
+
+| Variable               | Default | Meaning                                                              |
+| ---------------------- | ------- | -------------------------------------------------------------------- |
+| `BOOTSTRAP_TIMEOUT`    | `180`   | Seconds to wait for a healthy cluster (image build time not counted) |
+| `REQUIRE_SYNC_STANDBY` | `true`  | Set to `false` if `synchronous_mode` is disabled in `patroni.yml`    |
+
+```bash
+BOOTSTRAP_TIMEOUT=300 make up
+```
+
+The script is idempotent: on an already-running healthy stack it just
+verifies it and prints the summary again. It needs `docker` (Compose v2),
+`curl` and `python3`; on Windows run it from Git Bash or WSL2.
+
+To start the containers without the health wait (for example while
+debugging a crash loop), use Compose directly:
 
 ```bash
 cd docker-compose
