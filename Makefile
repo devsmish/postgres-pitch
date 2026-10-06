@@ -11,7 +11,7 @@ help:
 	@echo "  psql           - open a psql shell against a node (NODE=postgresql0|1|2, default 0)"
 	@echo "  schema         - apply the bootstrap schema to the current primary"
 	@echo "  lint           - run pre-commit against all files"
-	@echo "  failover-test  - run the automated failover verification script"
+	@echo "  failover-test  - kill the primary and verify failover end to end (Patroni, HAProxy, roles)"
 	@echo "  access-test    - verify HAProxy routing and role-based access (incl. switchover)"
 
 up:
