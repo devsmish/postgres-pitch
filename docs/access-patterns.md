@@ -105,7 +105,9 @@ leader ([ADR 0002](./decisions/0002-synchronous-replication.md)). HAProxy
 adds at most `fall 3 × inter 3s` ≈ 9s of health-check lag on top of
 Patroni's own detection, and `on-marked-down shutdown-sessions` on the
 write backend drops sessions still open through a demoted primary
-instead of letting them linger.
+instead of letting them linger. Measured end-to-end timings (including how
+long the write endpoint takes to follow the new primary) are in
+[failover-notes.md](../../docs/failover-notes.md).
 
 ## Verifying it
 

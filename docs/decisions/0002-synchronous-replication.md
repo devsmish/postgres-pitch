@@ -55,6 +55,11 @@ the synchronous standby *before* the kill — not just an arbitrary
 survivor — which is the actual guarantee this configuration is meant to
 provide, not merely "a new leader appeared."
 
+The test has since been extended to cover the client path too (HAProxy
+rerouting, the demo roles, the old primary rejoining); the end-to-end
+timings and the full list of assertions are in
+[failover-notes.md](../failover-notes.md).
+
 ## Consequences
 
 - **~28 seconds of write unavailability** on primary failure in this

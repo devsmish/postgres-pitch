@@ -38,7 +38,7 @@ iteration-by-iteration build order, see [ROADMAP.md](../ROADMAP.md).
 | Component | Role | Status |
 |---|---|---|
 | PostgreSQL (1 Primary + 1 Sync Standby + 1 Async Replica) | Data layer | ✅ verified locally (Docker Compose) — automatic failover confirmed, see [ADR 0002](./decisions/0002-synchronous-replication.md) |
-| Patroni + etcd | Cluster orchestration, automatic failover | ✅ verified locally — see `tests/failover_test.sh` |
+| Patroni + etcd | Cluster orchestration, automatic failover | ✅ verified locally — see `tests/failover_test.sh` and [failover notes](../../docs/failover-notes.md) |
 | PgBouncer | Connection pooling (one instance per node, behind HAProxy) | 🚧 implemented, verification pending — see [access patterns](../../docs/access-patterns.md) |
 | HAProxy | Write (`:5000`) / read-only (`:5001`) routing via Patroni REST health checks | 🚧 implemented, verification pending — see [access patterns](../../docs/access-patterns.md) |
 | pgBackRest | Backups, point-in-time recovery | 📋 |
@@ -62,6 +62,7 @@ iteration-by-iteration build order, see [ROADMAP.md](../ROADMAP.md).
    [access-patterns.md](../../docs/access-patterns.md).
 4. **Failover**: Patroni detects primary failure, promotes the sync
    replica, HAProxy's next health checks move the write endpoint to it.
+   Measured timings and what is asserted: [failover-notes.md](../../docs/failover-notes.md).
    See `tests/failover_test.sh` and `tests/access_patterns_test.sh`.
 5. **Backup path**: pgBackRest continuously archives WAL and takes
    scheduled full/incremental backups to object storage; restores are
