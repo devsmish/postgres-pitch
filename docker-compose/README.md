@@ -48,7 +48,7 @@ From the repository root:
 make up
 ```
 
-`make up` runs [`../../docker-compose/bootstrap.sh`](../../docker-compose/bootstrap.sh), which starts the stack and
+`make up` runs [`bootstrap.sh`](./bootstrap.sh), which starts the stack and
 then **waits until it is actually healthy** instead of returning as soon as
 the containers exist. It polls Patroni's REST API until all three members
 are registered, there is exactly one running leader, the other members are
@@ -194,28 +194,29 @@ The row should be visible on both replicas within a second or two.
 ## Verify automatic failover
 
 ```bash
-bash tests/failover_test.sh
+bash tests/failover_test.sh     # or: make failover-test
 ```
 
 This kills the current primary's container (a genuine `docker kill`, not
-a graceful shutdown), measures how long it takes Patroni to elect a new
-leader, and confirms the promoted node was the **synchronous** standby —
-i.e. a zero-data-loss failover, not just "some node became leader." See
-[ADR 0002](../docs/decisions/0002-synchronous-replication.md) for why
-that distinction matters and the durability/latency trade-off behind it.
+a graceful shutdown) and checks that everything recovers on its own:
 
-Example output from a real run:
+- Patroni promotes the **synchronous** standby — a zero-data-loss
+  failover, not just "some node became leader." See
+  [ADR 0002](../docs/decisions/0002-synchronous-replication.md) for why
+  that distinction matters and the durability/latency trade-off behind it.
+- The write endpoint (`:5000`) follows the new primary with the same
+  connection string, and the read-only endpoint (`:5001`) never returns a
+  primary or the dead node.
+- Fresh `etl_writer` and `analytics_readonly` sessions work without any
+  change to grants or settings.
+- The old primary is restarted, rejoins as a replica, and is served by the
+  read-only endpoint again.
 
-```
-Old leader:            postgresql0 (killed)
-New leader:            postgresql1
-Failover time:         28s (container kill -> new leader visible)
-Promoted node check:   PASS — the synchronous standby was promoted
-                       (zero-data-loss failover, as designed)
-```
-
-The script restarts the killed node afterwards so it rejoins the cluster
-as a replica — confirm with `make status` a few seconds later.
+It prints the kill-to-recovery timings (Patroni, write endpoint, rejoin,
+read pool) and a row to paste into
+[`docs/failover-notes.md`](../docs/failover-notes.md), which explains the
+timings and records the measured results. The killed node is always
+started again at the end, even if a check fails.
 
 ## Verify routing and role-based access
 
