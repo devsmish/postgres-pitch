@@ -10,8 +10,11 @@
 #      docs/decisions/0002-synchronous-replication.md), not the async one.
 #   2. The write endpoint (:5000) starts reaching the new primary without
 #      the client changing its connection string.
-#   3. The read-only endpoint (:5001) never lands on a primary and never
-#      returns the dead old primary.
+#   3. The read-only endpoint (:5001) never returns the dead old primary,
+#      and, once HAProxy's health checks catch up, stops returning the
+#      newly promoted node too (it was a healthy replica a moment ago, so
+#      HAProxy keeps listing it until its /replica check has failed `fall`
+#      times; the length of that window is measured and reported).
 #   4. Fresh etl_writer / analytics_readonly sessions work without any
 #      manual change of grants or settings.
 #   5. After the old primary is restarted it rejoins as a replica, and the
@@ -20,8 +23,11 @@
 # Measured (seconds, from the moment of the kill; resolution ~1s):
 #   - Patroni:  new leader visible in the Patroni REST API
 #   - Client:   write endpoint answers on the new primary
-#   - Rejoin:   old primary is a streaming replica again
+#   - Stale read pool: last read-only connection that still reached the new
+#               primary (the promoted node lingers in HAProxy's replica pool)
+#   - Rejoin:   old primary is a streaming replica again (from docker start)
 #   - Read pool: old primary is served by the read-only endpoint again
+#               (from docker start)
 # A Markdown row with these numbers is printed at the end, ready to paste
 # into docs/failover-notes.md.
 #
@@ -328,14 +334,70 @@ expect_ok "fresh etl_writer session can INSERT via the write endpoint" \
   "$WRITE_PORT" etl_writer "$ETL_WRITER_PASSWORD" \
   "INSERT INTO failover_check (note) VALUES ('after-failover')"
 
-SAMPLES=$(sample_endpoint "$READ_PORT" analytics_readonly "$ANALYTICS_READONLY_PASSWORD" 8)
-OK_COUNT=$(echo "$SAMPLES" | grep -c '|' || true)
-PRIMARY_HITS=$(echo "$SAMPLES" | grep -c '^primary|' || true)
-OLD_HITS=$(echo "$SAMPLES" | grep -c "|${ADDR_BEFORE}\$" || true)
-if [ "$OK_COUNT" -ge 1 ] && [ "$PRIMARY_HITS" -eq 0 ] && [ "$OLD_HITS" -eq 0 ]; then
-  pass "read-only endpoint: $OK_COUNT/8 new connections served by replicas only (never the new primary, never the dead old one)"
+# Probe the read-only endpoint with one fresh connection at a time until it
+# has answered from replicas 12 times in a row. HAProxy keeps a node that was
+# a healthy replica in the read pool until its /replica check has failed
+# `fall` times (fall 3 x inter 3s), so right after a promotion a few
+# connections can still land on the new primary. The time of the LAST such
+# connection marks the end of that window (to within one probe); the 12
+# confirming connections are deliberately not part of the measurement.
+echo "==> Probing the read-only endpoint until it only returns replicas..."
+READ_OK=0
+READ_FAIL=0
+PRIMARY_HITS=0
+OLD_HITS=0
+LAST_PRIMARY_TIME=""
+CLEAN_STREAK=0
+READ_STABLE=""
+PROBE_START=$(date +%s)
+while [ $(( $(date +%s) - PROBE_START )) -lt "$TIMEOUT_SECONDS" ]; do
+  out=$(run_sql "$READ_PORT" analytics_readonly "$ANALYTICS_READONLY_PASSWORD" "$WHO_SQL"); rc=$?
+  if [ "$rc" -ne 0 ]; then
+    READ_FAIL=$((READ_FAIL + 1))
+    CLEAN_STREAK=0
+    sleep 1
+    continue
+  fi
+  READ_OK=$((READ_OK + 1))
+  case "$out" in
+    "primary|"*)
+      PRIMARY_HITS=$((PRIMARY_HITS + 1))
+      LAST_PRIMARY_TIME=$(( $(date +%s) - START_TIME ))
+      CLEAN_STREAK=0
+      ;;
+    *"|${ADDR_BEFORE}")
+      OLD_HITS=$((OLD_HITS + 1))
+      CLEAN_STREAK=0
+      ;;
+    *)
+      CLEAN_STREAK=$((CLEAN_STREAK + 1))
+      ;;
+  esac
+  if [ "$CLEAN_STREAK" -ge 12 ]; then
+    READ_STABLE=1
+    break
+  fi
+done
+
+if [ "$READ_OK" -ge 1 ] && [ "$OLD_HITS" -eq 0 ]; then
+  pass "read-only endpoint: $READ_OK connections succeeded ($READ_FAIL failed), none reached the dead old primary"
 else
-  fail "read-only endpoint after failover: $OK_COUNT/8 succeeded, $PRIMARY_HITS landed on a primary, $OLD_HITS on the old primary"
+  fail "read-only endpoint after failover: $READ_OK succeeded, $READ_FAIL failed, $OLD_HITS reached the dead old primary"
+fi
+
+STALE_TXT="n/a"
+if [ -n "$READ_STABLE" ]; then
+  if [ "$PRIMARY_HITS" -gt 0 ]; then
+    STALE_TXT="${LAST_PRIMARY_TIME}s"
+    pass "read-only endpoint stopped returning the new primary: $PRIMARY_HITS of $READ_OK probed connections still reached it, the last one ${LAST_PRIMARY_TIME}s after the kill ($(( LAST_PRIMARY_TIME - PATRONI_TIME ))s after the promotion was visible in Patroni)"
+    echo "        (the promoted node was a healthy replica until a moment ago; HAProxy keeps it in the"
+    echo "         read pool until /replica has failed 'fall' times)"
+  else
+    STALE_TXT="none"
+    pass "read-only endpoint never returned the new primary (all $READ_OK probed connections were on replicas)"
+  fi
+else
+  fail "read-only endpoint did not settle on replicas within ${TIMEOUT_SECONDS}s ($PRIMARY_HITS reached a primary, $READ_FAIL failed)"
 fi
 
 # Give the surviving replica a moment to replay the INSERT before reading.
@@ -362,7 +424,7 @@ while [ $(( $(date +%s) - RESTART_TIME )) -lt "$TIMEOUT_SECONDS" ]; do
     role=$(member_field "$json" "$LEADER_BEFORE" role)
     state=$(member_field "$json" "$LEADER_BEFORE" state)
     if { [ "$role" = "replica" ] || [ "$role" = "sync_standby" ]; } && [ "$state" = "streaming" ]; then
-      REJOIN_TIME=$(( $(date +%s) - START_TIME ))
+      REJOIN_TIME=$(( $(date +%s) - RESTART_TIME ))
       break
     fi
   fi
@@ -377,7 +439,7 @@ if [ -n "$REJOIN_TIME" ]; then
   while [ $(( $(date +%s) - POOL_START )) -lt "$TIMEOUT_SECONDS" ]; do
     SAMPLES=$(sample_endpoint "$READ_PORT" analytics_readonly "$ANALYTICS_READONLY_PASSWORD" 6)
     if echo "$SAMPLES" | grep -q "^replica|${ADDR_OLD_NEW}\$"; then
-      POOL_TIME=$(( $(date +%s) - START_TIME ))
+      POOL_TIME=$(( $(date +%s) - RESTART_TIME ))
       break
     fi
     sleep 1
@@ -387,12 +449,12 @@ fi
 echo ""
 echo "--- Checks after the old primary rejoined ---"
 if [ -n "$REJOIN_TIME" ]; then
-  pass "old primary ($LEADER_BEFORE) rejoined as a streaming replica after ${REJOIN_TIME}s"
+  pass "old primary ($LEADER_BEFORE) rejoined as a streaming replica ${REJOIN_TIME}s after being restarted"
 else
   fail "old primary ($LEADER_BEFORE) did not rejoin as a streaming replica within the timeout"
 fi
 if [ -n "$POOL_TIME" ]; then
-  pass "read-only endpoint serves the former primary again after ${POOL_TIME}s"
+  pass "read-only endpoint serves the former primary again ${POOL_TIME}s after it was restarted"
 else
   fail "read-only endpoint did not start serving the former primary within the timeout"
 fi
@@ -408,12 +470,14 @@ echo "New leader:            $NEW_LEADER"
 echo "Sync standby before:   $SYNC_BEFORE"
 echo "Failover time:         ${PATRONI_TIME}s (container kill -> new leader visible in Patroni)"
 echo "Write downtime:        ${WRITE_TIME:-n/a}s (container kill -> write endpoint on the new primary)"
-echo "Old primary rejoined:  ${REJOIN_TIME:-n/a}s (kill -> streaming replica)"
-echo "Back in read pool:     ${POOL_TIME:-n/a}s (kill -> served by the read-only endpoint)"
+echo "Last read on new primary: ${STALE_TXT} (kill -> last read-only connection that still reached the new primary)"
+echo "Old primary rejoined:  ${REJOIN_TIME:-n/a}s (docker start -> streaming replica)"
+echo "Back in read pool:     ${POOL_TIME:-n/a}s (docker start -> served by the read-only endpoint)"
 echo "Resolution ~1s; the position inside Patroni's loop_wait window varies, so repeat the run."
+echo "(Failover, write and stale-read times are from the kill; rejoin and read-pool-back are from docker start.)"
 echo ""
 echo "Row for docs/failover-notes.md:"
-echo "| $(date +%F) | $LEADER_BEFORE | $NEW_LEADER | ${PATRONI_TIME}s | ${WRITE_TIME:-n/a}s | ${REJOIN_TIME:-n/a}s | ${POOL_TIME:-n/a}s |"
+echo "| $(date +%F) | $LEADER_BEFORE | $NEW_LEADER | ${PATRONI_TIME}s | ${WRITE_TIME:-n/a}s | ${STALE_TXT} | ${REJOIN_TIME:-n/a}s | ${POOL_TIME:-n/a}s |"
 echo ""
 if [ "$FAILURES" -eq 0 ]; then
   echo "ALL CHECKS PASSED"
