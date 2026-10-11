@@ -82,6 +82,7 @@ from the kill would measure the test's own delay).
 | 2026-10-06 | postgresql1 | postgresql0 | 33s | 38s |   41s   |   15s   |   21s   |
 | 2026-10-06 | postgresql0 | postgresql2 | 31s | 35s |   37s   |   16s   |   22s   |
 | 2026-10-06 | postgresql2 | postgresql1 | 27s | 31s |   36s   |   16s   |   22s   |
+| 2026-10-11 | postgresql1 | postgresql2 | 29s | 34s |   37s   |   16s   |   22s   |
 
 1. First run, before the test measured this.
 2. First run: counted from the kill (59s / 65s), which includes the test's
