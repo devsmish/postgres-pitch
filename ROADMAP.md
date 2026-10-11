@@ -211,10 +211,10 @@ postgres-pitch/
 - [x] `../requirements.txt` and local dev setup docs
 
 ### Iteration 1 — Local cluster skeleton
-- [ ] `feat(docker): 3-node Patroni + etcd + PgBouncer + HAProxy locally`
-- [ ] Bootstrap script that brings up the whole stack with one command
-- [ ] Verify manual failover (kill primary → re-election → HAProxy switches over)
-- [ ] Update README with a verified Quick Start
+- [x] `feat(docker): 3-node Patroni + etcd + PgBouncer + HAProxy locally`
+- [x] Bootstrap script that brings up the whole stack with one command
+- [x] Verify manual failover (kill primary → re-election → HAProxy switches over)
+- [x] Update README with a verified Quick Start
 
 ### Iteration 2 — Data: initial load
 - [ ] `feat(db): base reference schema (countries, cities, stadiums, clubs)`
@@ -279,12 +279,12 @@ postgres-pitch/
 Cross-cutting hygiene tasks not tied to a single iteration's functional
 scope — tracked here so they don't get lost between iterations.
 
-- [ ] `chore: enforce LF line endings via .gitattributes` — GitHub issue #9.
+- [x] `chore: enforce LF line endings via .gitattributes` — GitHub issue #14.
       Development happens across multiple OSes (Windows, macOS); without
       an explicit `.gitattributes`, line endings depend on each machine's
       local git config, which is fragile — a CRLF-mangled shell script
       copied into a Linux container fails at startup with
-      `/bin/bash^M: bad interpreter`. See PR for #14 for details.
+      `/bin/bash^M: bad interpreter`. See PR #16 for details.
 
 ---
 
