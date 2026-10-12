@@ -1,4 +1,4 @@
-.PHONY: help up down reset logs status leader psql schema lint failover-test access-test
+.PHONY: help up down reset logs status leader psql schema lint lint-ansible failover-test access-test
 
 help:
 	@echo "Available targets:"
@@ -10,7 +10,8 @@ help:
 	@echo "  leader         - show which node is currently the primary"
 	@echo "  psql           - open a psql shell against a node (NODE=postgresql0|1|2, default 0)"
 	@echo "  schema         - apply the bootstrap schema to the current primary"
-	@echo "  lint           - run pre-commit against all files"
+	@echo "  lint           - run the pre-commit hooks (all except ansible-lint) against all files"
+	@echo "  lint-ansible   - run ansible-lint via its own config (Linux/macOS/WSL only; also runs in CI)"
 	@echo "  failover-test  - kill the primary and verify failover end to end (Patroni, HAProxy, roles)"
 	@echo "  access-test    - verify HAProxy routing and role-based access (incl. switchover)"
 
@@ -50,6 +51,9 @@ schema:
 
 lint:
 	pre-commit run --all-files
+
+lint-ansible:
+	pre-commit run --all-files -c .pre-commit-config-ansible.yaml
 
 failover-test:
 	bash tests/failover_test.sh
