@@ -83,13 +83,13 @@ pre-commit install              # runs the hooks automatically on every commit
 
 `ansible-lint` is deliberately **not** part of `.pre-commit-config.yaml`
 (the config `pre-commit install` uses as the local git hook) — it lives
-in a separate `.pre-commit-config-ansible.yaml`. This means `git commit`
+in a separate `../.pre-commit-config-ansible.yaml`. This means `git commit`
 never tries to install or run it, on any OS, and never fails because of
 it. It's run explicitly instead:
 
 ```bash
 pip install -r requirements-ansible.txt
-pre-commit run --all-files -c .pre-commit-config-ansible.yaml
+pre-commit run --all-files -c .pre-commit-config-ansible.yaml   # or: make lint-ansible
 ```
 
 > **Why a separate config, not just a Windows workaround:** `ansible-lint`
@@ -102,6 +102,13 @@ pre-commit run --all-files -c .pre-commit-config-ansible.yaml
 > Splitting it out gives identical local behavior on every OS: the git
 > hook never touches Ansible, and `.github/workflows/lint.yml` runs both
 > configs in CI regardless of what OS the change was authored on.
+>
+> The separate config also points the hook at `ansible/` explicitly: the
+> upstream `ansible-lint` hook ignores `files:` filters (it runs with
+> `pass_filenames: false` and `always_run: true`), so without that it lints
+> every YAML file in the repository, such as `docker-compose/docker-compose.yml`.
+> The decision, with the alternatives that were considered, is recorded in
+> [ADR 0003](../docs/decisions/0003-ansible-lint-in-ci-and-separate-config.md).
 
 > **Windows-only note:** since this project also uses Docker Compose and
 > later Terraform/Ansible more heavily, developing inside **WSL2** is
