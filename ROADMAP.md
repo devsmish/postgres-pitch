@@ -285,6 +285,12 @@ scope — tracked here so they don't get lost between iterations.
       local git config, which is fragile — a CRLF-mangled shell script
       copied into a Linux container fails at startup with
       `/bin/bash^M: bad interpreter`. See PR #16 for details.
+- [x] `chore: fix the local pre-commit/ansible-lint workflow on Windows` —
+  GitHub issue #13. `ansible-lint` cannot install on native Windows and,
+  as a hook of the default config, broke every `git commit` there. It
+  now lives in `../.pre-commit-config-ansible.yaml`, runs in CI and via
+      `make lint-ansible` (Linux/macOS/WSL) and is scoped to `ansible/`.
+  See [ADR 0003](../docs/decisions/0003-ansible-lint-in-ci-and-separate-config.md).
 
 ---
 
