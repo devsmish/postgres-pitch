@@ -1,0 +1,24 @@
+# ansible-lint, kept apart from .pre-commit-config.yaml on purpose.
+#
+# `pre-commit install` only installs the hooks of the default config, so a
+# normal `git commit` never touches this file - on any OS. That matters
+# because ansible-lint refuses to install on native Windows, and pre-commit
+# would otherwise try to build its environment on every commit. CI runs this
+# config on Linux (.github/workflows/lint.yml); locally, on Linux/macOS/WSL:
+#
+#   pip install -r requirements-ansible.txt
+#   pre-commit run --all-files -c .pre-commit-config-ansible.yaml   # or: make lint-ansible
+#
+# Why: docs/decisions/0003-ansible-lint-in-ci-and-separate-config.md
+repos:
+  - repo: https://github.com/ansible/ansible-lint
+    rev: v24.7.0
+    hooks:
+      - id: ansible-lint
+        # The upstream hook sets `pass_filenames: false` and `always_run: true`,
+        # so a `files:` filter is ignored and ansible-lint would lint every YAML
+        # file in the repository (docker-compose.yml, workflows, ...). Point it
+        # at the Ansible tree explicitly.
+        args: ["ansible/"]
+        additional_dependencies:
+          - ansible-core>=2.15,<2.18

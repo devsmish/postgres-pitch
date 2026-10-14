@@ -1,0 +1,23 @@
+# Force LF line endings on checkout, regardless of the OS or local git
+# config (core.autocrlf). This matters concretely for this project: shell
+# scripts (entrypoint.sh, post_bootstrap.sh, tests/*.sh) get COPY'd
+# straight into Linux containers — a CRLF-mangled script fails at
+# container startup with "/bin/bash^M: bad interpreter", which is easy
+# to introduce accidentally on Windows and easy to miss until a
+# container actually runs.
+
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.sql  text eol=lf
+*.py   text eol=lf
+*.md   text eol=lf
+Makefile text eol=lf
+Dockerfile text eol=lf
+
+# Never touch binaries even if misdetected as text
+*.png  -text
+*.jpg  -text
+*.zip  -text

@@ -184,13 +184,14 @@ postgres-pitch/
 ├── .pre-commit-config.yaml
 ├── .sqlfluff
 ├── .env.example
+├── .gitattribute
 ├── .gitignore
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 ├── LICENSE
 ├── Makefile
 ├── requirements.txt
-├── requirements-linux.txt
+├── requirements-ansible.txt
 ├── DATA_SOURCES.md
 ├── ROADMAP.md
 └── README.md
@@ -209,11 +210,15 @@ postgres-pitch/
 - [x] CI lint pipeline (GitHub Actions + pre-commit)
 - [x] `../requirements.txt` and local dev setup docs
 
-### Iteration 1 — Local cluster skeleton
-- [ ] `feat(docker): 3-node Patroni + etcd + PgBouncer + HAProxy locally`
-- [ ] Bootstrap script that brings up the whole stack with one command
-- [ ] Verify manual failover (kill primary → re-election → HAProxy switches over)
-- [ ] Update README with a verified Quick Start
+### Iteration 1 — Local cluster skeleton ✅ (released as v0.2.0)
+- [x] `feat(docker): 3-node Patroni + etcd + PgBouncer + HAProxy locally`
+- [x] Bootstrap script that brings up the whole stack with one command
+- [x] Verify manual failover (kill primary → re-election → HAProxy switches over)
+- [x] Update README with a verified Quick Start
+
+Unplanned work completed during this iteration is tracked under
+[Chores / Technical Debt](#chores--technical-debt): #13 (ansible-lint
+workflow on Windows) and #14 (LF line endings).
 
 ### Iteration 2 — Data: initial load
 - [ ] `feat(db): base reference schema (countries, cities, stadiums, clubs)`
@@ -273,6 +278,24 @@ postgres-pitch/
 - [ ] Final README, badges, screenshots
 - [ ] Pin repository, fill in About section/tags on GitHub
 
+### Chores / Technical Debt
+
+Cross-cutting hygiene tasks not tied to a single iteration's functional
+scope — tracked here so they don't get lost between iterations.
+
+- [x] `chore: enforce LF line endings via .gitattributes` — GitHub issue #14.
+      Development happens across multiple OSes (Windows, macOS); without
+      an explicit `.gitattributes`, line endings depend on each machine's
+      local git config, which is fragile — a CRLF-mangled shell script
+      copied into a Linux container fails at startup with
+      `/bin/bash^M: bad interpreter`. See PR #16 for details.
+- [x] `chore: fix the local pre-commit/ansible-lint workflow on Windows` —
+      GitHub issue #13. `ansible-lint` cannot install on native Windows and,
+      as a hook of the default config, broke every `git commit` there. It
+      now lives in `.pre-commit-config-ansible.yaml`, runs in CI and via
+      `make lint-ansible` (Linux/macOS/WSL) and is scoped to `ansible/`.
+      See [ADR 0003](./docs/decisions/0003-ansible-lint-in-ci-and-separate-config.md).
+
 ---
 
 ## 7. Scheduled Operational Jobs
@@ -303,7 +326,7 @@ postgres-pitch/
 ## 9. Documentation Discipline
 
 - **Upfront:** repo folder structure (empty dirs with `.gitkeep` are fine),
-  this `PROJECT_PLAN.md` / `ROADMAP.md`, `docs/architecture.md` as the
+  this `ROADMAP.md`, `docs/architecture.md` as the
   target picture with status markers
 - **As you go:** README (only what actually works), ADRs (written at the
   moment a decision is made), detailed docs per service, `DATA_SOURCES.md`

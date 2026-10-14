@@ -30,7 +30,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
-          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml', '.pre-commit-config-ansible.yaml') }}
 
-      - name: Run pre-commit
+      - name: Run pre-commit (main config)
         run: pre-commit run --all-files --show-diff-on-failure
+
+      # ansible-lint is not in the main config on purpose, see
+      # docs/decisions/0003-ansible-lint-in-ci-and-separate-config.md.
+      # `!cancelled()` runs it even if the step above failed, so one push
+      # reports every problem instead of one per round trip.
+      - name: Run ansible-lint (separate pre-commit config)
+        if: ${{ !cancelled() }}
+        run: pre-commit run --all-files --show-diff-on-failure -c .pre-commit-config-ansible.yaml
