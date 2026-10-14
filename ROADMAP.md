@@ -210,11 +210,15 @@ postgres-pitch/
 - [x] CI lint pipeline (GitHub Actions + pre-commit)
 - [x] `../requirements.txt` and local dev setup docs
 
-### Iteration 1 — Local cluster skeleton
+### Iteration 1 — Local cluster skeleton ✅ (released as v0.2.0)
 - [x] `feat(docker): 3-node Patroni + etcd + PgBouncer + HAProxy locally`
 - [x] Bootstrap script that brings up the whole stack with one command
 - [x] Verify manual failover (kill primary → re-election → HAProxy switches over)
 - [x] Update README with a verified Quick Start
+
+Unplanned work completed during this iteration is tracked under
+[Chores / Technical Debt](#chores--technical-debt): #13 (ansible-lint
+workflow on Windows) and #14 (LF line endings).
 
 ### Iteration 2 — Data: initial load
 - [ ] `feat(db): base reference schema (countries, cities, stadiums, clubs)`
@@ -286,11 +290,11 @@ scope — tracked here so they don't get lost between iterations.
       copied into a Linux container fails at startup with
       `/bin/bash^M: bad interpreter`. See PR #16 for details.
 - [x] `chore: fix the local pre-commit/ansible-lint workflow on Windows` —
-  GitHub issue #13. `ansible-lint` cannot install on native Windows and,
-  as a hook of the default config, broke every `git commit` there. It
-  now lives in `../.pre-commit-config-ansible.yaml`, runs in CI and via
+      GitHub issue #13. `ansible-lint` cannot install on native Windows and,
+      as a hook of the default config, broke every `git commit` there. It
+      now lives in `.pre-commit-config-ansible.yaml`, runs in CI and via
       `make lint-ansible` (Linux/macOS/WSL) and is scoped to `ansible/`.
-  See [ADR 0003](../docs/decisions/0003-ansible-lint-in-ci-and-separate-config.md).
+      See [ADR 0003](./docs/decisions/0003-ansible-lint-in-ci-and-separate-config.md).
 
 ---
 

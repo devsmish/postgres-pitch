@@ -8,8 +8,12 @@
 > Ansible), full observability stack, and real-world data pipelines —
 > populated with real football data via open APIs.
 
-**Status:** 🚧 early stage — see [ROADMAP.md](./ROADMAP.md) for the full
-plan and current progress.
+**Status:** 🚧 in active development. Latest release: **v0.2.0**
+(Iteration 1): a three-node Patroni/PostgreSQL cluster with etcd, PgBouncer
+and HAProxy that starts with one command and whose failover is verified.
+Data, observability, backups, infrastructure as code and ETL are still
+ahead; see [ROADMAP.md](./ROADMAP.md) for the full plan and
+[CHANGELOG.md](./CHANGELOG.md) for what each release contains.
 
 ---
 
@@ -26,16 +30,19 @@ football data (clubs, players, competitions, matches, stadiums) sourced
 from open APIs and datasets — see [DATA_SOURCES.md](./DATA_SOURCES.md) for
 details and licensing.
 
-## Planned Architecture
+## Architecture
 
-- **PostgreSQL**: 1 Primary + 1 Sync Replica + 1 Async Replica
-- **Patroni + etcd** — automated failover orchestration
-- **PgBouncer** — connection pooling
-- **HAProxy** — routing to the current primary
-- **pgBackRest** — backups and point-in-time recovery
-- **Prometheus + Grafana** — monitoring and dashboards
-- **Terraform + Ansible** — infrastructure as code, local and cloud deployment
-- **Python ETL scripts** — scheduled data sync and quality checks
+✅ built and verified locally (v0.2.0) · 📋 planned
+
+- ✅ **PostgreSQL**: 1 Primary + 1 Sync Replica + 1 Async Replica
+- ✅ **Patroni + etcd** — automated failover orchestration
+- ✅ **PgBouncer** — connection pooling
+- ✅ **HAProxy** — routing to the current primary (write) and the replicas
+  (read-only)
+- 📋 **pgBackRest** — backups and point-in-time recovery
+- 📋 **Prometheus + Grafana** — monitoring and dashboards
+- 📋 **Terraform + Ansible** — infrastructure as code, local and cloud deployment
+- 📋 **Python ETL scripts** — scheduled data sync and quality checks
 
 Full details in [docs/architecture.md](./docs/architecture.md).
 
@@ -218,9 +225,23 @@ If a first start ever goes wrong (for example a node restarting in a
 loop), `make logs` shows why, and `make reset` followed by `make up`
 gives a clean start.
 
+## Documentation
+
+- [docs/architecture.md](./docs/architecture.md) — components, data flow
+  and status
+- [docs/access-patterns.md](./docs/access-patterns.md) — read/write split
+  through HAProxy and PgBouncer, and the demo roles
+- [docs/failover-notes.md](./docs/failover-notes.md) — measured failover
+  behaviour and what is asserted
+- [docs/decisions/](./docs/decisions/) — architecture decision records
+- [CONTRIBUTING.md](./CONTRIBUTING.md) — workflow, local setup and linting
+- [CHANGELOG.md](./CHANGELOG.md) — what each release contains
+
 ## Roadmap
 
-See [ROADMAP.md](./ROADMAP.md) for the complete, iteration-by-iteration plan.
+See [ROADMAP.md](./ROADMAP.md) for the complete, iteration-by-iteration
+plan. Iterations 0 and 1 are released (v0.1.0, v0.2.0); next is Iteration 2,
+loading the real football data.
 
 ## License
 
