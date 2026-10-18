@@ -166,12 +166,11 @@ postgres-pitch/
 │   ├── prometheus/alert.rules.yml
 │   └── grafana/dashboards/
 ├── db/
-│   ├── migrations/              # Sqitch/Flyway DDL migrations
-│   └── seed/                    # bulk-load scripts (OpenFootball, Kaggle)
+│   ├── migrations/              # Sqitch DDL migrations
+│   └── seed/                    # one-off initial load: bulk_load.py (OpenFootball, Kaggle)
 ├── scripts/
 │   ├── etl/
 │   │   ├── sync_football_data.py    # recurring live sync
-│   │   ├── bulk_load.py             # initial load
 │   │   └── data_quality_check.py    # cross-source validation
 │   ├── check_replication_lag.py
 │   ├── verify_backup_restore.py     # backup quality verification
@@ -221,11 +220,14 @@ Unplanned work completed during this iteration is tracked under
 workflow on Windows) and #14 (LF line endings).
 
 ### Iteration 2 — Data: initial load
-- [ ] `feat(db): base reference schema (countries, cities, stadiums, clubs)`
-- [ ] `feat(db): migrations via Sqitch/Flyway`
-- [ ] `feat(etl): bulk_load.py — import OpenFootball + Kaggle datasets`
-- [ ] Populate the database with real historical data (several leagues, several seasons)
-- [ ] `docs: DATA_SOURCES.md with licenses and attribution`
+- [ ] `docs: select datasets, scope and licenses (DATA_SOURCES.md)` (#26)
+- [ ] `docs: ADR 0004 — Sqitch for schema migrations` (#23)
+- [ ] `feat(db): versioned migrations with Sqitch, make migrate` — the baseline is the existing `001` schema (#24)
+- [ ] `feat(db): yearly partitions for the full historical date range` (#25)
+- [ ] `feat(db): annual partition maintenance — scheduled job (31 Dec, 20:00 UTC) + runbook` (#30)
+- [ ] `feat(db): seed loader — bulk_load.py, OpenFootball import` (#27)
+- [ ] `feat(db): seed loader — Kaggle import` (#28)
+- [ ] Populate the database with real historical data (all leagues and seasons available in the chosen sources) and verify it across the cluster (#29)
 
 ### Iteration 3 — Observability
 - [ ] `feat(monitoring): prometheus, postgres_exporter, patroni metrics`
@@ -263,7 +265,7 @@ workflow on Windows) and #14 (LF line endings).
 
 ### Iteration 9 — Performance
 - [ ] `feat(scripts): slow_query_report.py — pg_stat_statements analysis`
-- [ ] `feat(db): partitioning of matches/match_events`
+- [ ] `feat(db): partition tuning of matches/match_events at realistic volumes` (partitioning itself exists since Iteration 0)
 - [ ] `feat(db): index optimization, removing unused indexes`
 - [ ] `docs: performance-notes.md — before/after, pgbench results`
 
@@ -308,6 +310,7 @@ scope — tracked here so they don't get lost between iterations.
 | Backup restore verification | Weekly | verify_backup_restore.py |
 | Data freshness monitoring | Continuous | Prometheus alert |
 | Archiving old seasons | Annually / on demand | Script + partitioning |
+| Create the partitions for the coming year (`matches`, `match_events`) | Annually, 31 Dec 20:00 UTC | decided in ADR 0005 (pg_cron / scheduler container / systemd timer) |
 
 ---
 
