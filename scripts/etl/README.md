@@ -1,3 +1,3 @@
 # etl
 
-Recurring and one-off data pipeline scripts: bulk_load.py, sync_football_data.py, data_quality_check.py.
+Recurring data pipeline scripts: sync_football_data.py, data_quality_check.py. The one-off initial load (bulk_load.py) lives in [db/seed](../../db/seed/).
