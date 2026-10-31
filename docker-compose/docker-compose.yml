@@ -134,7 +134,7 @@ services:
     image: postgres-pitch-patroni:local
     container_name: postgres-pitch-postgresql0
     hostname: postgresql0
-    networks: [postgres-pitch]
+    networks: [ postgres-pitch ]
     depends_on:
       etcd1:
         condition: service_healthy
@@ -184,7 +184,7 @@ services:
     image: postgres-pitch-patroni:local
     container_name: postgres-pitch-postgresql1
     hostname: postgresql1
-    networks: [postgres-pitch]
+    networks: [ postgres-pitch ]
     depends_on:
       etcd1:
         condition: service_healthy
@@ -208,7 +208,7 @@ services:
     image: postgres-pitch-patroni:local
     container_name: postgres-pitch-postgresql2
     hostname: postgresql2
-    networks: [postgres-pitch]
+    networks: [ postgres-pitch ]
     depends_on:
       etcd1:
         condition: service_healthy
@@ -227,7 +227,7 @@ services:
       PATRONI_NAME: postgresql2
       PATRONI_RESTAPI_CONNECT_ADDRESS: postgresql2:8008
       PATRONI_POSTGRESQL_CONNECT_ADDRESS: postgresql2:5432
-  # Colocated 1:1 with each Postgres node (not a single shared pooler) so
+    # Colocated 1:1 with each Postgres node (not a single shared pooler) so
   # that HAProxy can route between them the same way it routes between the
   # raw Postgres nodes — by health-checking each node's Patroni REST API
   # and proxying data traffic to that node's own PgBouncer. This keeps the
@@ -244,7 +244,7 @@ services:
     <<: *pgbouncer-common
     container_name: postgres-pitch-pgbouncer0
     hostname: pgbouncer0
-    depends_on: [postgresql0]
+    depends_on: [ postgresql0 ]
     volumes:
       - ./pgbouncer/pgbouncer0.ini:/etc/pgbouncer/pgbouncer.ini:ro
     ports:
@@ -257,7 +257,7 @@ services:
     <<: *pgbouncer-common
     container_name: postgres-pitch-pgbouncer1
     hostname: pgbouncer1
-    depends_on: [postgresql1]
+    depends_on: [ postgresql1 ]
     volumes:
       - ./pgbouncer/pgbouncer1.ini:/etc/pgbouncer/pgbouncer.ini:ro
     ports:
@@ -270,7 +270,7 @@ services:
     <<: *pgbouncer-common
     container_name: postgres-pitch-pgbouncer2
     hostname: pgbouncer2
-    depends_on: [postgresql2]
+    depends_on: [ postgresql2 ]
     volumes:
       - ./pgbouncer/pgbouncer2.ini:/etc/pgbouncer/pgbouncer.ini:ro
     ports:
@@ -293,3 +293,33 @@ services:
       - "5000:5000"   # write endpoint — always the current primary
       - "5001:5001"   # read-only endpoint — load-balanced across replicas
       - "8404:8404"   # HAProxy stats page (http://localhost:8404/)
+
+  # Schema migrations with Sqitch (db/migrations/, ADR 0004). A tool
+  # container, not part of the stack: `make up` does not start it, and the
+  # `tools` profile keeps a plain `docker compose up` from doing so. Run it
+  # with `make migrate` (docker compose run --rm sqitch deploy).
+  #
+  # It talks to HAProxy's write endpoint, so it follows the current primary,
+  # but to the session-mode PgBouncer alias postgres_pitch_migrations (the
+  # target in db/migrations/sqitch.conf): Sqitch relies on session state that
+  # transaction pooling does not preserve. The connection comes from the
+  # standard libpq variables below; nothing secret is committed.
+  #
+  # The image tag is not pinned yet: `latest` was Sqitch 1.6.1 when this was
+  # written. Pin it by digest once chosen:
+  #   docker image inspect sqitch/sqitch:latest --format "{{index .RepoDigests 0}}"
+  sqitch:
+    image: sqitch/sqitch:latest
+    profiles: [ "tools" ]
+    networks: [ postgres-pitch ]
+    depends_on: [ haproxy ]
+    working_dir: /repo
+    volumes:
+      - ../db/migrations:/repo
+    environment:
+      PGHOST: haproxy
+      PGPORT: "5000"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      SQITCH_FULLNAME: postgres-pitch migrations
+      SQITCH_EMAIL: migrations@postgres-pitch.invalid
