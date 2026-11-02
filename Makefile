@@ -55,8 +55,10 @@ SQITCH = cd docker-compose && docker compose --env-file ../.env run --rm -T sqit
 migrate:
 	$(SQITCH) deploy
 
+# `sqitch status` exits 1 when nothing is deployed yet ("No changes deployed"),
+# which is a state, not an error; it exits 0 otherwise.
 migrate-status:
-	$(SQITCH) status
+	$(SQITCH) status || true
 
 migrate-verify:
 	$(SQITCH) verify

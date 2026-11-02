@@ -48,12 +48,28 @@ if [ ! -f "$REPO_ROOT/.env" ]; then
   echo "ERROR: $REPO_ROOT/.env not found (cp .env.example .env)" >&2
   exit 1
 fi
-set -a
-# shellcheck disable=SC1090
-source <(tr -d '\r' < "$REPO_ROOT/.env")
-set +a
 
-DB="${POSTGRES_DB:-postgres_pitch}"
+# Read the few values this test needs straight from .env, WITHOUT sourcing or
+# exporting it. Unlike the other tests, this one runs `docker compose`, and
+# Compose gives environment variables priority over --env-file: sourcing .env
+# in bash would turn DATA_DIR=D:\DB\pg-pitch into D:DBpg-pitch (the shell eats
+# the backslashes) and Compose could then not even load the project.
+env_value() {
+  local line value
+  line=$(grep -E "^[[:space:]]*$1=" "$REPO_ROOT/.env" | tail -n 1 || true)
+  value=${line#*=}
+  value=${value%$'\r'}
+  value=${value%\"}
+  value=${value#\"}
+  value=${value%\'}
+  value=${value#\'}
+  if [ -z "$value" ]; then printf '%s' "$2"; else printf '%s' "$value"; fi
+}
+POSTGRES_DB="$(env_value POSTGRES_DB postgres_pitch)"
+POSTGRES_USER="$(env_value POSTGRES_USER postgres_pitch_admin)"
+POSTGRES_PASSWORD="$(env_value POSTGRES_PASSWORD "")"
+
+DB="$POSTGRES_DB"
 ALIAS_DB="${MIGRATIONS_DB:-postgres_pitch_migrations}"
 NODES=("postgresql0" "postgresql1" "postgresql2")
 CONTAINER_PREFIX="postgres-pitch-"
@@ -68,7 +84,7 @@ pass() { echo "  PASS  $1"; }
 fail() { echo "  FAIL  $1"; FAILURES=$((FAILURES + 1)); }
 info() { echo "  INFO  $1"; }
 
-# --- helpers -----------------------------------------------------------------
+# helpers
 
 rest_port() {
   case "$1" in
@@ -160,7 +176,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- pre-flight ----------------------------------------------------------------
+# pre-flight
 
 echo "==> Pre-flight"
 if ! CLUSTER=$(cluster_json); then
@@ -181,16 +197,20 @@ if [ $rc -ne 0 ]; then
   echo "       It is added in the three pgbouncer*.ini (see ADR 0004); restart the poolers after adding it." >&2
   exit 1
 fi
-if ! sq --version >/dev/null; then
-  echo "ERROR: the sqitch service does not start. Check the 'sqitch' service in docker-compose.yml" >&2
-  echo "       and that Docker can pull the image (docker compose --env-file ../.env run --rm sqitch --version)." >&2
+SQ_CHECK=$(sq --version); rc=$?
+if [ $rc -ne 0 ]; then
+  echo "ERROR: the sqitch service does not start (exit code $rc). Last output of Docker Compose:" >&2
+  echo "$SQ_CHECK" | tail -n 8 | sed 's/^/       /' >&2
+  echo "       Check the 'sqitch' service in docker-compose.yml and that Docker can pull the image:" >&2
+  echo "         cd docker-compose && docker compose --env-file ../.env run --rm -T sqitch --version" >&2
   exit 1
 fi
-SQITCH_VERSION=$(sq --version | head -1)
+# Compose prints its own progress lines first; pick the one that names Sqitch.
+SQITCH_VERSION=$(echo "$SQ_CHECK" | grep -m1 "App::Sqitch" || echo "$SQ_CHECK" | tail -n 1)
 echo "    sqitch: ${SQITCH_VERSION}"
 TMP=$(mktemp -d)
 
-# --- 1. the baseline equals the original schema ---------------------------------
+# 1. the baseline equals the original schema
 
 echo ""
 echo "--- 1. baseline changes reproduce db/schema/001_initial_schema.sql ---"
@@ -238,7 +258,7 @@ else
 fi
 drop_scratch
 
-# --- 2. make migrate on the real database ----------------------------------------
+# 2. make migrate on the real database
 
 echo ""
 echo "--- 2. make migrate on the real database through the alias ---"
@@ -265,7 +285,7 @@ if [ $rc -eq 0 ]; then pass "sqitch verify passes on the real database"; else fa
 OUT=$(sq status); rc=$?
 if [ $rc -eq 0 ]; then pass "sqitch status works"; else fail "sqitch status failed: $(echo "$OUT" | tail -n 1)"; fi
 
-# --- 3. default privileges ---------------------------------------------------------
+# 3. default privileges
 
 echo ""
 echo "--- 3. default privileges on what the changes created ---"
@@ -288,7 +308,7 @@ else
   fail "unexpected privileges: got '${OUT}', expected '${EXPECTED}' (etl INSERT,UPDATE,DELETE,partition INSERT,sequence USAGE, analytics SELECT,INSERT,matview SELECT, registry etl,analytics)"
 fi
 
-# --- 4. the same after a switchover --------------------------------------------------
+# 4. the same after a switchover
 
 echo ""
 echo "--- 4. deploy after a switchover (same settings) ---"
@@ -322,7 +342,7 @@ else
   fi
 fi
 
-# --- results ---------------------------------------------------------------------------
+# results
 
 echo ""
 echo "==================== RESULTS ===================="
