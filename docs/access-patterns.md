@@ -71,7 +71,7 @@ Created once, at cluster bootstrap, by
 
 Grants are applied with `ALTER DEFAULT PRIVILEGES`, not just `GRANT ...
 ON ALL TABLES`, because the bootstrap runs *before* the schema is
-applied (`make schema`). Default privileges make every table created
+applied (`make migrate`). Default privileges make every table created
 afterwards by the admin role pick up the right access automatically.
 `etl_writer` also needs sequence privileges: an `INSERT` into a table
 with a `SERIAL` column fails with `permission denied for sequence`
@@ -107,7 +107,7 @@ Patroni's own detection, and `on-marked-down shutdown-sessions` on the
 write backend drops sessions still open through a demoted primary
 instead of letting them linger. Measured end-to-end timings (including how
 long the write endpoint takes to follow the new primary) are in
-[failover-notes.md](../../docs/failover-notes.md).
+[failover-notes.md](./failover-notes.md).
 
 ## Verifying it
 

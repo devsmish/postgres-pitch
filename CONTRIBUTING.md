@@ -141,8 +141,8 @@ what CI runs, but gives more control (e.g. auto-fixing):
 
 ```bash
 # SQL — lint, or auto-fix formatting issues
-sqlfluff lint db/schema/*.sql
-sqlfluff fix db/schema/*.sql
+sqlfluff lint db/
+sqlfluff fix db/
 
 # Ansible — lint roles and playbooks
 ansible-lint ansible/
