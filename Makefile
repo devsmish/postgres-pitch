@@ -24,12 +24,19 @@ up:
 down:
 	cd docker-compose && docker compose --env-file ../.env down
 
+# DATA_DIR is read from .env WITHOUT sourcing it: sourcing treats the file as shell
+# code, which eats the backslashes of a Windows path (D:\DB\pg-pitch becomes
+# D:DBpg-pitch) and keeps a trailing carriage return from CRLF line endings, so
+# the old recipe "removed" a path that did not exist. Here: take the last
+# DATA_DIR= line, drop \r and surrounding quotes, turn backslashes into slashes.
 reset:
 	cd docker-compose && docker compose --env-file ../.env down
-	@cd docker-compose && \
-	set -a; [ -f ../.env ] && . ../.env; set +a; \
-	DIR="$${DATA_DIR:-./data}"; \
-	case "$$DIR" in ""|"/"|".") echo "Refusing to delete unsafe DATA_DIR: '$$DIR'"; exit 1;; esac; \
+	@cd docker-compose || exit 1; \
+	DIR=$$([ -f ../.env ] && grep -E '^[[:space:]]*DATA_DIR=' ../.env | tail -n 1 | cut -d= -f2- | tr -d '\r' | tr '\\' '/'); \
+	DIR="$${DIR%\"}"; DIR="$${DIR#\"}"; DIR="$${DIR%\'}"; DIR="$${DIR#\'}"; \
+	DIR="$${DIR:-./data}"; \
+	case "$$DIR" in "/"|".") echo "Refusing to delete unsafe DATA_DIR: '$$DIR'"; exit 1;; esac; \
+	if [ ! -e "$$DIR" ]; then echo "Nothing to remove: '$$DIR' does not exist."; exit 0; fi; \
 	echo "Removing local cluster data at: $$DIR"; \
 	rm -rf "$$DIR"
 

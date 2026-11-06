@@ -58,7 +58,7 @@ etcd, PgBouncer and HAProxy — and waits until it is healthy.
   compose plugin)
 - A shell: bash (Linux/macOS, WSL2, Git Bash on Windows) or PowerShell on
   Windows. Steps 1-3 and the `make` targets work in both; where the syntax
-  differs (step 4 and Verification), both variants are shown.
+  differs (step 5 and Verification), both variants are shown.
 - `curl` and `python3` (used by the startup and test scripts)
 - `make` (optional; see the note after step 2)
 
@@ -73,8 +73,8 @@ cp .env.example .env
 Then edit `.env`:
 
 - `DATA_DIR`: where the cluster's data lives on your machine (a path you
-  control; on native Windows use forward slashes, e.g. `D:/DB/pg-pitch`).
-  The default `./data` resolves relative to `docker-compose/`.
+  control; on native Windows either `D:/DB/pg-pitch` or `D:\DB\pg-pitch`
+  works). The default `./data` resolves relative to `docker-compose/`.
 - Replace every `change_me` in the **PostgreSQL**, **Patroni / etcd**,
   **PgBouncer** and **Demo roles** sections (`POSTGRES_PASSWORD`,
   `POSTGRES_REPLICATION_PASSWORD`, `ETCD_CLUSTER_TOKEN`,
@@ -111,7 +111,10 @@ options: [docker-compose/README.md](./docker-compose/README.md).
 > that each target wraps instead: `bash docker-compose/bootstrap.sh`
 > for `make up`, `bash tests/access_patterns_test.sh` for
 > `make access-test`, `bash tests/failover_test.sh` for
-> `make failover-test`.
+> `make failover-test`, `bash tests/migrate_test.sh` for
+> `make migrate-test`. For `make migrate`, run
+> `cd docker-compose` and then
+> `docker compose --env-file ../.env run --rm -T sqitch deploy`.
 
 ### 3. Check that the cluster is healthy
 
@@ -133,7 +136,24 @@ Which node is the leader differs from run to run.
 +-------------+-------------+--------------+-----------+----+-------------+-----+------------+-----+
 ```
 
-### 4. Connect
+### 4. Create the schema
+
+```bash
+make migrate
+```
+
+Sqitch applies the schema (seven changes: types, reference data, clubs and
+seasons, players, matches and events with yearly partitions, the standings
+view, indexes) to the current primary. It runs as a container, so nothing is
+installed on your machine, and it follows the primary on its own. Each change
+prints `ok`; running `make migrate` again reports `Nothing to deploy`. How it
+works, and how to add a change: [db/migrations/README.md](./db/migrations/README.md).
+
+If the database was created before Sqitch was introduced (with the old
+`make schema`), `make migrate` fails with "already exists"; the same README
+shows how to adopt it.
+
+### 5. Connect
 
 Clients connect through HAProxy and never need to know which node is the
 primary:
@@ -144,13 +164,20 @@ primary:
 | Read-only | `localhost:5001` | the replicas, load-balanced |
 | HAProxy stats | http://localhost:8404/ | backend health at a glance |
 
-Two demo roles show the split. First load your `.env` into the current
-shell, so the commands below pick up the passwords you set there:
+Two demo roles show the split. First load the values the commands below use
+from your `.env` into the current shell:
 
 ```bash
 # bash
-set -a; source <(tr -d '\r' < .env); set +a
+for v in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB ETL_WRITER_PASSWORD ANALYTICS_READONLY_PASSWORD; do
+  export "$v=$(grep -E "^$v=" .env | tail -n 1 | cut -d= -f2- | tr -d '\r')"
+done
 ```
+
+Do not `source` the whole file in a shell you also use for `make` or
+`docker compose`: the shell would mangle a Windows-style `DATA_DIR` such as
+`D:\DB\pg-pitch` (it eats the backslashes), and Docker Compose gives variables
+from your shell priority over `.env`.
 
 ```powershell
 # PowerShell
@@ -186,7 +213,7 @@ psql "postgresql://analytics_readonly@localhost:5001/postgres_pitch"  # SELECT o
 
 **Replication works.** `make status` shows both non-leader members as
 `streaming` with lag `0` (step 3). To see it from the primary's side, ask
-it through the write endpoint (same shell as in step 4, with `.env` loaded);
+it through the write endpoint (same shell as in step 5, with `.env` loaded);
 expect two rows, both `streaming`, one `sync` and one `async`:
 
 ```bash
@@ -198,6 +225,12 @@ docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" postgres-pitch-postgresql0 psql -
 # PowerShell
 docker exec -e PGPASSWORD=$env:POSTGRES_PASSWORD postgres-pitch-postgresql0 psql -h haproxy -p 5000 -U $env:POSTGRES_USER -d $env:POSTGRES_DB -c "SELECT application_name, state, sync_state FROM pg_stat_replication"
 ```
+
+**Schema.** `make migrate-status` shows what is deployed, and a second
+`make migrate` reports `Nothing to deploy`. `make migrate-test` checks that
+the migrations reproduce the original schema exactly, that revert and
+redeploy work, that the demo roles get the right default privileges, and that
+`make migrate` still works after a `patronictl switchover`.
 
 **Routing and roles.** `make access-test` checks that the write endpoint
 always reaches a primary and the read-only endpoint a replica, that each
