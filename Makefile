@@ -1,4 +1,4 @@
-.PHONY: help up down reset logs status leader psql schema lint lint-ansible failover-test access-test
+.PHONY: help up down reset logs status leader psql schema migrate migrate-status migrate-verify migrate-test lint lint-ansible failover-test access-test
 
 help:
 	@echo "Available targets:"
@@ -9,11 +9,14 @@ help:
 	@echo "  status         - show Patroni cluster member status (patronictl list)"
 	@echo "  leader         - show which node is currently the primary"
 	@echo "  psql           - open a psql shell against a node (NODE=postgresql0|1|2, default 0)"
-	@echo "  schema         - apply the bootstrap schema to the current primary"
+	@echo "  migrate        - apply pending schema migrations (Sqitch) to the current primary"
+	@echo "  migrate-status - show which migrations are deployed"
+	@echo "  migrate-verify - run the verify script of every deployed migration"
 	@echo "  lint           - run the pre-commit hooks (all except ansible-lint) against all files"
 	@echo "  lint-ansible   - run ansible-lint via its own config (Linux/macOS/WSL only; also runs in CI)"
 	@echo "  failover-test  - kill the primary and verify failover end to end (Patroni, HAProxy, roles)"
 	@echo "  access-test    - verify HAProxy routing and role-based access (incl. switchover)"
+	@echo "  migrate-test   - verify the migrations: baseline equals 001, no-op rerun, privileges, switchover"
 
 up:
 	bash docker-compose/bootstrap.sh
@@ -44,10 +47,28 @@ NODE ?= postgresql0
 psql:
 	docker exec -it postgres-pitch-$(NODE) psql -U $${POSTGRES_USER:-postgres_pitch_admin} -d $${POSTGRES_DB:-postgres_pitch}
 
+# Schema migrations run as the `sqitch` service of docker-compose.yml (see
+# db/migrations/README.md and ADR 0004). -T because deploy/status/verify need no
+# terminal, which also keeps them working from Git Bash.
+SQITCH = cd docker-compose && docker compose --env-file ../.env run --rm -T sqitch
+
+migrate:
+	$(SQITCH) deploy
+
+# `sqitch status` exits 1 when nothing is deployed yet ("No changes deployed"),
+# which is a state, not an error; it exits 0 otherwise.
+migrate-status:
+	$(SQITCH) status || true
+
+migrate-verify:
+	$(SQITCH) verify
+
+# Replaced by `make migrate`. It used to apply db/schema/001_initial_schema.sql
+# through postgresql0's debug port, which only worked while postgresql0 was the
+# primary. Kept as a stub so an old habit gets a clear message.
 schema:
-	@echo "Applying schema to the current primary via postgresql0:5433..."
-	psql "postgresql://$${POSTGRES_USER:-postgres_pitch_admin}@localhost:5433/$${POSTGRES_DB:-postgres_pitch}" \
-		-f db/schema/001_initial_schema.sql
+	@echo "'make schema' was replaced by 'make migrate' (Sqitch migrations, see db/migrations/README.md)."
+	@exit 1
 
 lint:
 	pre-commit run --all-files
@@ -60,3 +81,6 @@ failover-test:
 
 access-test:
 	bash tests/access_patterns_test.sh
+
+migrate-test:
+	bash tests/migrate_test.sh

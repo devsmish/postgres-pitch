@@ -23,7 +23,7 @@
 #    role-based access verification.
 # 4. Create the auth_query lookup function PgBouncer uses to authenticate
 #    any role without a static userlist.txt entry per role, and grant
-#    default privileges so tables created later (via `make schema`)
+#    default privileges so tables created later (via `make migrate`)
 #    automatically pick up the right access for the demo roles.
 set -euo pipefail
 
@@ -173,7 +173,7 @@ GRANT EXECUTE ON FUNCTION public.user_lookup(text) TO ${PGBOUNCER_AUTH_USER};
 
 -- Applied via ALTER DEFAULT PRIVILEGES, not GRANT ... ON ALL TABLES,
 -- because at this point in the bootstrap process the schema hasn't been
--- applied yet (see \`make schema\` in the Makefile / ROADMAP Iteration 2).
+-- applied yet (see \`make migrate\` in the Makefile / db/migrations/).
 -- This way, whatever tables the schema migration creates afterwards
 -- automatically pick up the right grants without re-running anything.
 ALTER DEFAULT PRIVILEGES FOR ROLE ${ADMIN_USER} IN SCHEMA public

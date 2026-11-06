@@ -46,7 +46,7 @@ iteration-by-iteration build order, see [ROADMAP.md](../ROADMAP.md).
 | Terraform | Cloud infrastructure provisioning | 📋 |
 | Ansible | Configuration management | 📋 |
 | Python ETL scripts | Football data ingestion and sync | 📋 |
-| Database schema | Reference data, clubs, players, matches | ✅ (initial DDL, see `db/schema/001_initial_schema.sql`) |
+| Database schema | Reference data, clubs, players, matches | ✅ versioned migrations with Sqitch (`db/migrations/`, `make migrate`), see [ADR 0004](./decisions/0004-sqitch-for-schema-migrations.md) |
 
 ## Data Flow
 
@@ -59,7 +59,7 @@ iteration-by-iteration build order, see [ROADMAP.md](../ROADMAP.md).
    current primary only) or `5001` (read-only, round-robin over healthy
    replicas). HAProxy forwards to the PgBouncer colocated with the chosen
    node, which pools connections to that node's PostgreSQL. See
-   [access-patterns.md](../../docs/access-patterns.md).
+   [access-patterns.md](./access-patterns.md).
 4. **Failover**: Patroni detects primary failure, promotes the sync
    replica, HAProxy's next health checks move the write endpoint to it.
    Measured timings and what is asserted: [failover-notes.md](./failover-notes.md).
@@ -75,5 +75,7 @@ Individual decisions and their trade-offs are recorded as ADRs in
 
 - [ADR 0001 — Schema design decisions](./decisions/0001-schema-design.md)
 - [ADR 0002 — Synchronous replication trade-off](./decisions/0002-synchronous-replication.md)
+- [ADR 0003 — ansible-lint in CI and a separate pre-commit config](./decisions/0003-ansible-lint-in-ci-and-separate-config.md)
+- [ADR 0004 — Sqitch for schema migrations](./decisions/0004-sqitch-for-schema-migrations.md)
 
 New ADRs are added as decisions are made, not written retroactively.
