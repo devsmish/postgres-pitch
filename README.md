@@ -8,11 +8,12 @@
 > Ansible), full observability stack, and real-world data pipelines —
 > populated with real football data via open APIs.
 
-**Status:** 🚧 in active development. Latest release: **v0.2.0**
-(Iteration 1): a three-node Patroni/PostgreSQL cluster with etcd, PgBouncer
-and HAProxy that starts with one command and whose failover is verified.
-Data, observability, backups, infrastructure as code and ETL are still
-ahead; see [ROADMAP.md](./ROADMAP.md) for the full plan and
+**Status:** 🚧 in active development. Latest release: **v0.2.1**: the
+Iteration 1 stack (v0.2.0), a three-node Patroni/PostgreSQL cluster with etcd,
+PgBouncer and HAProxy that starts with one command and whose failover is
+verified, plus versioned schema migrations with Sqitch (`make migrate`).
+Loading the data, observability, backups, infrastructure as code and ETL are
+still ahead; see [ROADMAP.md](./ROADMAP.md) for the full plan and
 [CHANGELOG.md](./CHANGELOG.md) for what each release contains.
 
 ---
@@ -32,7 +33,7 @@ details and licensing.
 
 ## Architecture
 
-✅ built and verified locally (v0.2.0) · 📋 planned
+✅ built and verified locally (v0.2.1) · 📋 planned
 
 - ✅ **PostgreSQL**: 1 Primary + 1 Sync Replica + 1 Async Replica
 - ✅ **Patroni + etcd** — automated failover orchestration
@@ -266,15 +267,49 @@ gives a clean start.
   through HAProxy and PgBouncer, and the demo roles
 - [docs/failover-notes.md](./docs/failover-notes.md) — measured failover
   behaviour and what is asserted
+- [db/migrations/README.md](./db/migrations/README.md) — running and writing
+  schema migrations (Sqitch)
 - [docs/decisions/](./docs/decisions/) — architecture decision records
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — workflow, local setup and linting
 - [CHANGELOG.md](./CHANGELOG.md) — what each release contains
 
+## Repository structure
+
+What exists today (📋 = a placeholder for a later iteration; the full target
+tree is in [ROADMAP.md](./ROADMAP.md)):
+
+```
+postgres-pitch/
+├── docker-compose/      # the local stack (make up)
+│   ├── docker-compose.yml   # etcd, PostgreSQL/Patroni, PgBouncer, HAProxy, Sqitch tool
+│   ├── bootstrap.sh         # starts the stack and waits until it is healthy
+│   ├── Dockerfile, entrypoint.sh   # the Patroni/PostgreSQL image
+│   ├── patroni/             # patroni.yml, post_bootstrap.sh (roles, grants, PgBouncer auth)
+│   ├── pgbouncer/           # one config per node, incl. the migrations alias
+│   └── haproxy/             # haproxy.cfg (write / read-only routing)
+├── db/
+│   ├── schema/          # 001_initial_schema.sql: the original schema, frozen as
+│   │                    # the reference the migrations are checked against
+│   ├── migrations/      # Sqitch: sqitch.plan, deploy/, revert/, verify/ (make migrate)
+│   └── seed/            # initial data load (Iteration 2, in progress)
+├── tests/               # access_patterns_test.sh, failover_test.sh,
+│                        # migration_path_test.sh, migrate_test.sh
+├── docs/                # architecture, access patterns, failover notes, decisions/ (ADRs)
+├── .github/             # CI (lint), issue and PR templates
+├── Makefile             # make up / down / reset / status / migrate / *-test / lint
+├── scripts/etl/ 📋      # recurring data sync
+├── ansible/ 📋          # configuration management (role skeletons)
+├── terraform/ 📋        # cloud infrastructure
+├── monitoring/ 📋       # Prometheus and Grafana
+├── config/ 📋           # PostgreSQL and PgBouncer configuration
+└── ROADMAP.md, CHANGELOG.md, CONTRIBUTING.md, DATA_SOURCES.md
+```
+
 ## Roadmap
 
 See [ROADMAP.md](./ROADMAP.md) for the complete, iteration-by-iteration
-plan. Iterations 0 and 1 are released (v0.1.0, v0.2.0); next is Iteration 2,
-loading the real football data.
+plan. Iterations 0 and 1 are released (v0.1.0, v0.2.0). Iteration 2, loading the
+real football data, is in progress: v0.2.1 shipped its migration tooling.
 
 ## License
 

@@ -83,7 +83,7 @@ pre-commit install              # runs the hooks automatically on every commit
 
 `ansible-lint` is deliberately **not** part of `.pre-commit-config.yaml`
 (the config `pre-commit install` uses as the local git hook) — it lives
-in a separate `../.pre-commit-config-ansible.yaml`. This means `git commit`
+in a separate `.pre-commit-config-ansible.yaml`. This means `git commit`
 never tries to install or run it, on any OS, and never fails because of
 it. It's run explicitly instead:
 
@@ -108,7 +108,7 @@ pre-commit run --all-files -c .pre-commit-config-ansible.yaml   # or: make lint-
 > `pass_filenames: false` and `always_run: true`), so without that it lints
 > every YAML file in the repository, such as `docker-compose/docker-compose.yml`.
 > The decision, with the alternatives that were considered, is recorded in
-> [ADR 0003](../docs/decisions/0003-ansible-lint-in-ci-and-separate-config.md).
+> [ADR 0003](./docs/decisions/0003-ansible-lint-in-ci-and-separate-config.md).
 
 > **Windows-only note:** since this project also uses Docker Compose and
 > later Terraform/Ansible more heavily, developing inside **WSL2** is
@@ -171,6 +171,15 @@ git checkout -b feature/docker-compose-cluster
 git push -u origin feature/docker-compose-cluster
 # open a PR: feature/docker-compose-cluster → develop
 ```
+
+### Changing the database schema
+
+Schema changes are Sqitch changes (a `deploy`, a `revert` and a `verify`
+script) in `db/migrations/`, applied with `make migrate`; see
+[db/migrations/README.md](./db/migrations/README.md). Never edit a change that
+has already been deployed, and never edit `db/schema/001_initial_schema.sql`:
+it is frozen as the reference that `tests/migrate_test.sh` compares the
+migrations against.
 
 ### Preparing a release
 

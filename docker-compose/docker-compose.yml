@@ -1,9 +1,9 @@
 # Local development stack: 3-node etcd (DCS) + 3-node Patroni-managed
 # PostgreSQL cluster (1 primary, 1 sync replica, 1 async replica — see
-# patroni/patroni.yml for the synchronous_mode rationale).
-#
-# PgBouncer and HAProxy are added in a follow-up PR (see ROADMAP.md,
-# Iteration 1) — this file is intentionally scoped to the database layer.
+# patroni/patroni.yml for the synchronous_mode rationale), one PgBouncer per
+# node and HAProxy in front (write :5000 / read-only :5001). The `sqitch`
+# service at the end is a tool container for schema migrations (`make
+# migrate`), not part of the running stack.
 #
 # Data storage: every node's data directory is a BIND MOUNT to
 # ${DATA_DIR}/<node>, not a Docker named volume. This keeps database
@@ -134,7 +134,7 @@ services:
     image: postgres-pitch-patroni:local
     container_name: postgres-pitch-postgresql0
     hostname: postgresql0
-    networks: [ postgres-pitch ]
+    networks: [postgres-pitch]
     depends_on:
       etcd1:
         condition: service_healthy
@@ -184,7 +184,7 @@ services:
     image: postgres-pitch-patroni:local
     container_name: postgres-pitch-postgresql1
     hostname: postgresql1
-    networks: [ postgres-pitch ]
+    networks: [postgres-pitch]
     depends_on:
       etcd1:
         condition: service_healthy
@@ -208,7 +208,7 @@ services:
     image: postgres-pitch-patroni:local
     container_name: postgres-pitch-postgresql2
     hostname: postgresql2
-    networks: [ postgres-pitch ]
+    networks: [postgres-pitch]
     depends_on:
       etcd1:
         condition: service_healthy
@@ -227,7 +227,7 @@ services:
       PATRONI_NAME: postgresql2
       PATRONI_RESTAPI_CONNECT_ADDRESS: postgresql2:8008
       PATRONI_POSTGRESQL_CONNECT_ADDRESS: postgresql2:5432
-    # Colocated 1:1 with each Postgres node (not a single shared pooler) so
+  # Colocated 1:1 with each Postgres node (not a single shared pooler) so
   # that HAProxy can route between them the same way it routes between the
   # raw Postgres nodes — by health-checking each node's Patroni REST API
   # and proxying data traffic to that node's own PgBouncer. This keeps the
@@ -244,7 +244,7 @@ services:
     <<: *pgbouncer-common
     container_name: postgres-pitch-pgbouncer0
     hostname: pgbouncer0
-    depends_on: [ postgresql0 ]
+    depends_on: [postgresql0]
     volumes:
       - ./pgbouncer/pgbouncer0.ini:/etc/pgbouncer/pgbouncer.ini:ro
     ports:
@@ -257,7 +257,7 @@ services:
     <<: *pgbouncer-common
     container_name: postgres-pitch-pgbouncer1
     hostname: pgbouncer1
-    depends_on: [ postgresql1 ]
+    depends_on: [postgresql1]
     volumes:
       - ./pgbouncer/pgbouncer1.ini:/etc/pgbouncer/pgbouncer.ini:ro
     ports:
@@ -270,7 +270,7 @@ services:
     <<: *pgbouncer-common
     container_name: postgres-pitch-pgbouncer2
     hostname: pgbouncer2
-    depends_on: [ postgresql2 ]
+    depends_on: [postgresql2]
     volumes:
       - ./pgbouncer/pgbouncer2.ini:/etc/pgbouncer/pgbouncer.ini:ro
     ports:
@@ -310,9 +310,9 @@ services:
   #   docker image inspect sqitch/sqitch:latest --format "{{index .RepoDigests 0}}"
   sqitch:
     image: sqitch/sqitch:latest
-    profiles: [ "tools" ]
-    networks: [ postgres-pitch ]
-    depends_on: [ haproxy ]
+    profiles: ["tools"]
+    networks: [postgres-pitch]
+    depends_on: [haproxy]
     working_dir: /repo
     volumes:
       - ../db/migrations:/repo
