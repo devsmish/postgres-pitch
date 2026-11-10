@@ -239,6 +239,7 @@ Example (database '${PG_DB}'; passwords are in .env):
 
 Next steps:
   make status         # patronictl list
+  make migrate        # apply the schema (Sqitch migrations)
   make access-test    # verify routing + role-based access (does a switchover)
   make failover-test  # kill the primary and measure re-election
   make down           # stop the stack (keeps data); make reset wipes it

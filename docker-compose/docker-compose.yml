@@ -1,9 +1,9 @@
 # Local development stack: 3-node etcd (DCS) + 3-node Patroni-managed
 # PostgreSQL cluster (1 primary, 1 sync replica, 1 async replica — see
-# patroni/patroni.yml for the synchronous_mode rationale).
-#
-# PgBouncer and HAProxy are added in a follow-up PR (see ROADMAP.md,
-# Iteration 1) — this file is intentionally scoped to the database layer.
+# patroni/patroni.yml for the synchronous_mode rationale), one PgBouncer per
+# node and HAProxy in front (write :5000 / read-only :5001). The `sqitch`
+# service at the end is a tool container for schema migrations (`make
+# migrate`), not part of the running stack.
 #
 # Data storage: every node's data directory is a BIND MOUNT to
 # ${DATA_DIR}/<node>, not a Docker named volume. This keeps database
@@ -293,3 +293,33 @@ services:
       - "5000:5000"   # write endpoint — always the current primary
       - "5001:5001"   # read-only endpoint — load-balanced across replicas
       - "8404:8404"   # HAProxy stats page (http://localhost:8404/)
+
+  # Schema migrations with Sqitch (db/migrations/, ADR 0004). A tool
+  # container, not part of the stack: `make up` does not start it, and the
+  # `tools` profile keeps a plain `docker compose up` from doing so. Run it
+  # with `make migrate` (docker compose run --rm sqitch deploy).
+  #
+  # It talks to HAProxy's write endpoint, so it follows the current primary,
+  # but to the session-mode PgBouncer alias postgres_pitch_migrations (the
+  # target in db/migrations/sqitch.conf): Sqitch relies on session state that
+  # transaction pooling does not preserve. The connection comes from the
+  # standard libpq variables below; nothing secret is committed.
+  #
+  # The image tag is not pinned yet: `latest` was Sqitch 1.6.1 when this was
+  # written. Pin it by digest once chosen:
+  #   docker image inspect sqitch/sqitch:latest --format "{{index .RepoDigests 0}}"
+  sqitch:
+    image: sqitch/sqitch:latest
+    profiles: ["tools"]
+    networks: [postgres-pitch]
+    depends_on: [haproxy]
+    working_dir: /repo
+    volumes:
+      - ../db/migrations:/repo
+    environment:
+      PGHOST: haproxy
+      PGPORT: "5000"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      SQITCH_FULLNAME: postgres-pitch migrations
+      SQITCH_EMAIL: migrations@postgres-pitch.invalid

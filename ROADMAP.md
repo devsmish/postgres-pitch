@@ -128,19 +128,28 @@ standings        (season_id, club_id, matchday, points,
 
 ```
 postgres-pitch/
-├── .github/workflows/
-│   ├── lint.yml                # tflint, ansible-lint, sqlfluff, shellcheck, ruff
-│   ├── molecule-test.yml       # Ansible role tests
-│   └── deploy-infra.yml        # cloud CI/CD (optional)
+├── .github/
+│   ├── workflows/
+│   │   ├── lint.yml            # pre-commit (main config) + ansible-lint (own config)
+│   │   ├── molecule-test.yml   # Ansible role tests
+│   │   └── deploy-infra.yml    # cloud CI/CD (optional)
+│   ├── ISSUE_TEMPLATE/
+│   └── PULL_REQUEST_TEMPLATE.md
 ├── docs/
 │   ├── architecture.md         # target architecture + status
 │   ├── architecture.png
+│   ├── access-patterns.md      # HAProxy / PgBouncer read-write split, demo roles
+│   ├── failover-notes.md       # measured failover behaviour
 │   ├── disaster-recovery.md    # PITR / runbook
-│   ├── decisions/              # ADRs: 0001-patroni-vs-repmgr.md, etc.
+│   ├── decisions/              # ADRs: 0001-schema-design.md ... 0004-sqitch-for-schema-migrations.md
 │   └── performance-notes.md    # before/after, optimization results
 ├── docker-compose/              # Phase 1: local stack
-│   ├── docker-compose.yml
-│   └── bootstrap.sh
+│   ├── docker-compose.yml       # etcd, Patroni/PostgreSQL, PgBouncer, HAProxy, Sqitch tool
+│   ├── bootstrap.sh             # make up: start and wait until healthy
+│   ├── Dockerfile / entrypoint.sh
+│   ├── patroni/                 # patroni.yml, post_bootstrap.sh
+│   ├── pgbouncer/               # one config per node (incl. the migrations alias)
+│   └── haproxy/                 # haproxy.cfg
 ├── terraform/                   # Phase 3: cloud
 │   ├── modules/                 # network, compute, storage
 │   ├── environments/{dev,prod}/
@@ -166,25 +175,29 @@ postgres-pitch/
 │   ├── prometheus/alert.rules.yml
 │   └── grafana/dashboards/
 ├── db/
-│   ├── migrations/              # Sqitch/Flyway DDL migrations
-│   └── seed/                    # bulk-load scripts (OpenFootball, Kaggle)
+│   ├── schema/                  # 001_initial_schema.sql: the original schema, frozen as the migrations' reference
+│   ├── migrations/              # Sqitch: sqitch.conf, sqitch.plan, deploy/ revert/ verify/ (make migrate)
+│   └── seed/                    # one-off initial load: bulk_load.py (OpenFootball, Kaggle)
 ├── scripts/
 │   ├── etl/
 │   │   ├── sync_football_data.py    # recurring live sync
-│   │   ├── bulk_load.py             # initial load
 │   │   └── data_quality_check.py    # cross-source validation
 │   ├── check_replication_lag.py
 │   ├── verify_backup_restore.py     # backup quality verification
 │   └── slow_query_report.py         # pg_stat_statements analysis
 ├── tests/
 │   ├── load_test.py             # pgbench/locust at realistic volumes
-│   ├── failover_test.sh
+│   ├── failover_test.sh         # kill the primary: Patroni, HAProxy, roles, rejoin
+│   ├── access_patterns_test.sh  # routing and role-based access, incl. a switchover
+│   ├── migration_path_test.sh   # how Sqitch reaches the cluster (ADR 0004)
+│   ├── migrate_test.sh          # the migrations: baseline equals 001, no-op rerun, privileges
 │   └── chaos/                   # kill primary, network partition, disk full
 ├── .editorconfig
 ├── .pre-commit-config.yaml
+├── .pre-commit-config-ansible.yaml  # ansible-lint, kept out of the git hook (ADR 0003)
 ├── .sqlfluff
 ├── .env.example
-├── .gitattribute
+├── .gitattributes
 ├── .gitignore
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
@@ -221,11 +234,17 @@ Unplanned work completed during this iteration is tracked under
 workflow on Windows) and #14 (LF line endings).
 
 ### Iteration 2 — Data: initial load
-- [ ] `feat(db): base reference schema (countries, cities, stadiums, clubs)`
-- [ ] `feat(db): migrations via Sqitch/Flyway`
-- [ ] `feat(etl): bulk_load.py — import OpenFootball + Kaggle datasets`
-- [ ] Populate the database with real historical data (several leagues, several seasons)
-- [ ] `docs: DATA_SOURCES.md with licenses and attribution`
+- [ ] `docs: select datasets, scope and licenses (DATA_SOURCES.md)` (#26)
+- [x] `docs: ADR 0004 — Sqitch for schema migrations` (#23)
+- [x] `feat(db): versioned migrations with Sqitch, make migrate` — the baseline is the existing `001` schema (#24)
+- [ ] `feat(db): yearly partitions for the full historical date range` (#25)
+- [ ] `feat(db): annual partition maintenance — scheduled job (31 Dec, 20:00 UTC) + runbook` (#30)
+- [ ] `feat(db): seed loader — bulk_load.py, OpenFootball import` (#27)
+- [ ] `feat(db): seed loader — Kaggle import` (#28)
+- [ ] Populate the database with real historical data (all leagues and seasons available in the chosen sources) and verify it across the cluster (#29)
+
+Interim release **v0.2.1** shipped the migration tooling (#23, #24) and the #34 fix;
+the rest of Iteration 2 is released as **v0.3.0**.
 
 ### Iteration 3 — Observability
 - [ ] `feat(monitoring): prometheus, postgres_exporter, patroni metrics`
@@ -263,7 +282,7 @@ workflow on Windows) and #14 (LF line endings).
 
 ### Iteration 9 — Performance
 - [ ] `feat(scripts): slow_query_report.py — pg_stat_statements analysis`
-- [ ] `feat(db): partitioning of matches/match_events`
+- [ ] `feat(db): partition tuning of matches/match_events at realistic volumes` (partitioning itself exists since Iteration 0)
 - [ ] `feat(db): index optimization, removing unused indexes`
 - [ ] `docs: performance-notes.md — before/after, pgbench results`
 
@@ -295,6 +314,11 @@ scope — tracked here so they don't get lost between iterations.
       now lives in `.pre-commit-config-ansible.yaml`, runs in CI and via
       `make lint-ansible` (Linux/macOS/WSL) and is scoped to `ansible/`.
       See [ADR 0003](./docs/decisions/0003-ansible-lint-in-ci-and-separate-config.md).
+- [x] `fix(make): read DATA_DIR from .env without sourcing it` — GitHub issue #34.
+      `make reset` sourced `.env`, which eats the backslashes of a Windows path
+      (`D:\DB\pg-pitch` became `D:DBpg-pitch`) and keeps the carriage return of CRLF
+      line endings, so it announced a deletion of a path that did not exist and left
+      the cluster data in place. Found while verifying #24.
 
 ---
 
@@ -308,6 +332,7 @@ scope — tracked here so they don't get lost between iterations.
 | Backup restore verification | Weekly | verify_backup_restore.py |
 | Data freshness monitoring | Continuous | Prometheus alert |
 | Archiving old seasons | Annually / on demand | Script + partitioning |
+| Create the partitions for the coming year (`matches`, `match_events`) | Annually, 31 Dec 20:00 UTC | decided in ADR 0005 (pg_cron / scheduler container / systemd timer) |
 
 ---
 

@@ -1,0 +1,11 @@
+%syntax-version=1.0.0
+%project=pitch
+%uri=https://github.com/devsmish/postgres-pitch
+
+enum_types 2026-10-25T17:56:57Z devsmish <devsmish@users.noreply.github.com> # Enumerated types: competition, position, transfer, match status, match event
+reference_tables 2026-10-25T17:56:57Z devsmish <devsmish@users.noreply.github.com> # Countries, cities, stadiums, referees
+clubs_competitions_seasons [enum_types reference_tables] 2026-10-25T17:56:58Z devsmish <devsmish@users.noreply.github.com> # Clubs, competitions, seasons, club history
+players_and_careers [enum_types reference_tables clubs_competitions_seasons] 2026-10-25T17:56:58Z devsmish <devsmish@users.noreply.github.com> # Players and their careers
+matches_and_events [enum_types clubs_competitions_seasons players_and_careers] 2026-10-25T17:56:59Z devsmish <devsmish@users.noreply.github.com> # Matches and match events, partitioned by year (2024-2026 plus default)
+standings_view [matches_and_events] 2026-10-25T17:56:59Z devsmish <devsmish@users.noreply.github.com> # Standings materialized view and its unique index
+indexes [players_and_careers matches_and_events] 2026-10-25T17:57:00Z devsmish <devsmish@users.noreply.github.com> # Secondary indexes
