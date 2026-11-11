@@ -48,7 +48,7 @@ repo name, which stays professional and infrastructure-focused at a glance)
                                               ┌──────────────────┐
                                               │ football-data.org │
                                               │ OpenFootball      │
-                                              │ Kaggle datasets   │
+                                              │ Open datasets     │
                                               └──────────────────┘
 ```
 
@@ -69,10 +69,10 @@ repo name, which stays professional and infrastructure-focused at a glance)
 
 | Source | Purpose | License / Terms | Attribution required |
 |---|---|---|---|
-| **OpenFootball** (GitHub) | Initial bulk load | Usually Public Domain / ODbL (varies by sub-repo) | Check per sub-dataset; link source |
-| **Kaggle datasets** | Initial bulk load | Varies by author (CC0, CC-BY, custom) | Check license per specific dataset before use |
-| **StatsBomb Open Data** | Analytics (optional) | StatsBomb's own license (attribution required, non-commercial) | Yes, per StatsBomb's terms |
-| **Wikidata / Wikipedia (SPARQL)** | Biographies, reference data | CC0 (public domain) | Not legally required, but good practice |
+| **OpenFootball** (GitHub) | Initial bulk load: clubs, leagues | CC0 1.0 (checked per repository) | Not required; credit the source |
+| **Open datasets** (GitHub/Kaggle): international_results, Fjelstul World Cup Database | Initial bulk load: national teams, World Cup players and events | CC0 (international_results), CC BY-SA 4.0 (Fjelstul) | Yes for Fjelstul, share-alike |
+| **Wikidata (SPARQL)** | Players, clubs, careers (pending a coverage check) | CC0 (public domain) | Not legally required, but good practice |
+| **StatsBomb Open Data** | Club match events (deferred, not in the baseline) | StatsBomb Public Data User Agreement: no redistribution, no commercial use, logo on published analysis | Yes, per StatsBomb's terms |
 | **football-data.org** | Recurring live sync | Attribution required, terms vary by tier | Yes |
 | **API-Football (RapidAPI)** | Additional live source | Own Terms of Service | Check storage/redistribution terms |
 | **TheSportsDB** | Cross-check / deduplication | Own terms, crowd-sourced data | Check redistribution terms |
@@ -87,7 +87,8 @@ via API on a schedule.
    was last checked
 3. The repository `LICENSE` (e.g. MIT) explicitly covers the **code**, not
    the data itself, which may carry its own terms
-4. Where a dataset requires non-commercial use (e.g. StatsBomb), the README
+4. Where a dataset requires non-commercial use or forbids redistribution
+   (e.g. StatsBomb or Transfermarkt, if they are ever adopted), the README
    explicitly states this is a learning/portfolio project, not for
    commercial use
 
@@ -177,7 +178,7 @@ postgres-pitch/
 ├── db/
 │   ├── schema/                  # 001_initial_schema.sql: the original schema, frozen as the migrations' reference
 │   ├── migrations/              # Sqitch: sqitch.conf, sqitch.plan, deploy/ revert/ verify/ (make migrate)
-│   └── seed/                    # one-off initial load: bulk_load.py (OpenFootball, Kaggle)
+│   └── seed/                    # one-off initial load: bulk_load.py (OpenFootball, national-team data)
 ├── scripts/
 │   ├── etl/
 │   │   ├── sync_football_data.py    # recurring live sync
@@ -234,13 +235,13 @@ Unplanned work completed during this iteration is tracked under
 workflow on Windows) and #14 (LF line endings).
 
 ### Iteration 2 — Data: initial load
-- [ ] `docs: select datasets, scope and licenses (DATA_SOURCES.md)` (#26)
+- [x] `docs: select datasets, scope and licenses (DATA_SOURCES.md)` (#26)
 - [x] `docs: ADR 0004 — Sqitch for schema migrations` (#23)
 - [x] `feat(db): versioned migrations with Sqitch, make migrate` — the baseline is the existing `001` schema (#24)
 - [ ] `feat(db): yearly partitions for the full historical date range` (#25)
 - [ ] `feat(db): annual partition maintenance — scheduled job (31 Dec, 20:00 UTC) + runbook` (#30)
 - [ ] `feat(db): seed loader — bulk_load.py, OpenFootball import` (#27)
-- [ ] `feat(db): seed loader — Kaggle import` (#28)
+- [ ] `feat(db): seed loader — national teams and players (international_results, Fjelstul, Wikidata)` (#28)
 - [ ] Populate the database with real historical data (all leagues and seasons available in the chosen sources) and verify it across the cluster (#29)
 
 Interim release **v0.2.1** shipped the migration tooling (#23, #24) and the #34 fix;
