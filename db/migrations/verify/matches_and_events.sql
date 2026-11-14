@@ -27,15 +27,29 @@ SELECT
 FROM match_events
 WHERE FALSE;
 
--- Both tables are partitioned by range on match_date and have the yearly
--- partitions 2024-2026 plus a default partition.
+-- Both tables are partitioned by range on match_date and have the partitions
+-- this change created: 2024, 2025, 2026 and a default one. Later changes add
+-- more partitions (yearly_partitions), so this does not count them.
 DO $$
+DECLARE
+    parent TEXT;
+    suffix TEXT;
 BEGIN
-    ASSERT (SELECT count(*) FROM pg_inherits WHERE inhparent = 'public.matches'::regclass) = 4,
-        'matches should have 4 partitions (2024, 2025, 2026, default)';
-    ASSERT (SELECT count(*) FROM pg_inherits WHERE inhparent = 'public.match_events'::regclass) = 4,
-        'match_events should have 4 partitions (2024, 2025, 2026, default)';
+    FOREACH parent IN ARRAY ARRAY['matches', 'match_events'] LOOP
+        FOREACH suffix IN ARRAY ARRAY['2024', '2025', '2026', 'default'] LOOP
+            ASSERT EXISTS (
+                SELECT 1
+                FROM pg_inherits AS i
+                INNER JOIN pg_class AS c ON i.inhrelid = c.oid
+                WHERE
+                    i.inhparent = format('public.%I', parent)::regclass
+                    AND c.relname = parent || '_' || suffix
+            ), format('%s should have the partition %s_%s', parent, parent, suffix);
+        END LOOP;
+    END LOOP;
     ASSERT (SELECT partstrat FROM pg_partitioned_table WHERE partrelid = 'public.matches'::regclass) = 'r',
         'matches should be range partitioned';
+    ASSERT (SELECT partstrat FROM pg_partitioned_table WHERE partrelid = 'public.match_events'::regclass) = 'r',
+        'match_events should be range partitioned';
 END
 $$;

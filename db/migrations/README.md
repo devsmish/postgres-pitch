@@ -45,6 +45,35 @@ That script is kept, frozen, as the reference for this comparison; do not edit i
 | `standings_view` | the standings materialized view and its unique index |
 | `indexes` | secondary indexes |
 
+## Changes after the baseline
+
+| Change | Contains |
+|---|---|
+| `yearly_partitions` | a yearly partition of `matches` and `match_events` for every year from 1872 to 2027 (the baseline has 2024-2026 plus the default one). Why this range: [DATA_SOURCES.md](../../DATA_SOURCES.md) |
+
+## Partitions
+
+Partitions are named `<table>_<year>` (`matches_1872`, `match_events_2027`) and
+cover one calendar year in UTC. Three things to know before adding or removing
+one (all checked on PostgreSQL 16.15):
+
+- **Write the bounds with an explicit offset**, for example
+  `FROM ('2028-01-01 00:00:00+00') TO ('2029-01-01 00:00:00+00')`. A bare
+  `'2028-01-01'` on a `TIMESTAMPTZ` column means midnight in the time zone of
+  the session that runs the statement, so the partition would depend on where it
+  was created. A partition built that way next to UTC ones fails with an overlap
+  error.
+- **Create a partition before data for its year arrives.** Rows outside every
+  partition go to the default one, and then
+  `CREATE TABLE ... PARTITION OF` for that range fails with "updated partition
+  constraint for default partition ... would be violated by some row". An empty
+  year is no problem. The rows have to be moved out of the default partition
+  first.
+- **A partition of `matches` cannot be dropped directly**, because
+  `match_events` has a foreign key to it. Detach it first:
+  `ALTER TABLE matches DETACH PARTITION matches_1900; DROP TABLE matches_1900;`.
+  Partitions of `match_events` can be dropped directly (its own revert does it).
+
 ## Adding a change
 
 Run these from `docker-compose/`. Pass your own name and e-mail so the plan
@@ -61,7 +90,10 @@ This creates `deploy/<change_name>.sql`, `revert/<change_name>.sql` and
 
 1. Write the three scripts. `deploy` and `revert` run in an explicit
    `BEGIN; ... COMMIT;`, `revert` undoes exactly what `deploy` did, and `verify`
-   only reads and fails if the change is missing.
+   only reads and fails if the change is missing. It has to stay true after
+   later changes, so it must not count objects that a later change may add (the
+   baseline `matches_and_events` once asserted exactly four partitions, which
+   `yearly_partitions` broke).
 2. Apply and check it: `make migrate`, then `make migrate-verify`.
 3. Check the revert on a development database:
    `docker compose --env-file ../.env run --rm sqitch revert --to <previous_change>`
@@ -97,6 +129,11 @@ make -C .. migrate-verify      # confirms the objects are really there
 ## Tests
 
 - `bash tests/migrate_test.sh`: the baseline equals `001`, revert and redeploy,
+  the later changes deploy, verify and revert back to exactly `001`,
   `make migrate` is a no-op the second time, default privileges, and the same
   after a switchover.
+- `bash tests/partitions_test.sh` (`make partitions-test`): the yearly partitions
+  exist with UTC bounds, rows at year edges land in the right partition, a date
+  range reads only its partitions, and the roles have the right privileges on
+  them.
 - `bash tests/migration_path_test.sh`: how Sqitch reaches the cluster (ADR 0004).
