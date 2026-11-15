@@ -238,7 +238,7 @@ workflow on Windows) and #14 (LF line endings).
 - [x] `docs: select datasets, scope and licenses (DATA_SOURCES.md)` (#26)
 - [x] `docs: ADR 0004 — Sqitch for schema migrations` (#23)
 - [x] `feat(db): versioned migrations with Sqitch, make migrate` — the baseline is the existing `001` schema (#24)
-- [ ] `feat(db): yearly partitions for the full historical date range` (#25)
+- [x] `feat(db): yearly partitions for the full historical date range` (#25)
 - [ ] `feat(db): annual partition maintenance — scheduled job (31 Dec, 20:00 UTC) + runbook` (#30)
 - [ ] `feat(db): seed loader — bulk_load.py, OpenFootball import` (#27)
 - [ ] `feat(db): seed loader — national teams and players (international_results, Fjelstul, Wikidata)` (#28)

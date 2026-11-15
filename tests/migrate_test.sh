@@ -8,7 +8,9 @@
 #      from db/schema/001_initial_schema.sql, one from the baseline Sqitch
 #      changes (up to and including `indexes`). The schemas must be identical
 #      (pg_dump --schema-only). Then `sqitch revert` must leave nothing behind
-#      and a fresh deploy must give the same schema again.
+#      and a fresh deploy must give the same schema again. Then the changes
+#      after the baseline (yearly_partitions) are deployed and verified, and
+#      reverting them must restore the baseline schema exactly.
 #   2. `make migrate` on the real database, through the session-mode alias:
 #      the first run deploys, the second is a no-op, `verify` and `status` pass.
 #   3. Default privileges on what the changes created: etl_writer can INSERT and
@@ -18,7 +20,7 @@
 #      new primary and is a no-op, with unchanged settings.
 #
 # Part 1 uses scratch databases that are removed on exit. Parts 2-4 work on the
-# real database: part 2 leaves the baseline deployed, which is its normal state
+# real database: part 2 leaves every change deployed, which is its normal state
 # after `make migrate`. Like access_patterns_test.sh, part 4 changes the leader.
 #
 # Sqitch runs as the `sqitch` service of docker-compose.yml, exactly like
@@ -254,6 +256,20 @@ else
     pass "a fresh deploy after the revert gives the same schema again"
   else
     fail "deploy after the revert failed or the schema differs (rc=$rc)"
+  fi
+
+  OUT=$(sq_direct "$LEADER" deploy "db:pg:${SCRATCH_SQITCH}"); rc=$?
+  if [ $rc -eq 0 ]; then pass "the changes after the baseline deploy on top of it (yearly_partitions)"; else fail "deploy of the later changes failed: $(echo "$OUT" | tail -n 2 | tr '\n' ' ')"; fi
+
+  OUT=$(sq_direct "$LEADER" verify "db:pg:${SCRATCH_SQITCH}"); rc=$?
+  if [ $rc -eq 0 ]; then pass "sqitch verify passes for every change, the later ones included"; else fail "sqitch verify failed after the later changes: $(echo "$OUT" | tail -n 3 | tr '\n' ' ')"; fi
+
+  OUT=$(sq_direct "$LEADER" revert -y --to "$BASELINE_LAST_CHANGE" "db:pg:${SCRATCH_SQITCH}"); rc=$?
+  dump_schema "$SCRATCH_SQITCH" -N sqitch > "$TMP/sqitch3.sql"
+  if [ $rc -eq 0 ] && diff -q "$TMP/ref.sql" "$TMP/sqitch3.sql" >/dev/null; then
+    pass "reverting the later changes restores the baseline schema exactly"
+  else
+    fail "revert of the later changes failed or the schema differs (rc=$rc: $(echo "$OUT" | tail -n 1))"
   fi
 fi
 drop_scratch
