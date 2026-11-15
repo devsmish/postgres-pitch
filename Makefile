@@ -1,4 +1,4 @@
-.PHONY: help up down reset logs status leader psql schema migrate migrate-status migrate-verify migrate-test lint lint-ansible failover-test access-test
+.PHONY: help up down reset logs status leader psql schema migrate migrate-status migrate-verify migrate-test partitions-test lint lint-ansible failover-test access-test
 
 help:
 	@echo "Available targets:"
@@ -17,6 +17,7 @@ help:
 	@echo "  failover-test  - kill the primary and verify failover end to end (Patroni, HAProxy, roles)"
 	@echo "  access-test    - verify HAProxy routing and role-based access (incl. switchover)"
 	@echo "  migrate-test   - verify the migrations: baseline equals 001, no-op rerun, privileges, switchover"
+	@echo "  partitions-test - verify the yearly partitions: layout, routing at year edges, pruning, privileges"
 
 up:
 	bash docker-compose/bootstrap.sh
@@ -91,3 +92,6 @@ access-test:
 
 migrate-test:
 	bash tests/migrate_test.sh
+
+partitions-test:
+	bash tests/partitions_test.sh
