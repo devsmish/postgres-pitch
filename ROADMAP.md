@@ -321,6 +321,13 @@ scope — tracked here so they don't get lost between iterations.
       line endings, so it announced a deletion of a path that did not exist and left
       the cluster data in place. Found while verifying #24.
 
+- [x] `fix(haproxy): raise client/server timeouts on the PostgreSQL endpoints` —
+      GitHub issue 39. HAProxy closed any session that stayed silent for 30 s,
+      so a single long statement through `:5000` or `:5001` failed with
+      "connection to server was lost". Found when `make migrate` deployed the
+      yearly partitions (#25): the deploy ran longer than 30 s on a Windows bind
+      mount. The two endpoints now allow 30 minutes.
+
 ---
 
 ## 7. Scheduled Operational Jobs

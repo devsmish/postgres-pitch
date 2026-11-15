@@ -268,3 +268,7 @@ make reset   # stops containers AND deletes DATA_DIR — start fresh
   (Patroni doesn't support env var substitution there). It must match
   `POSTGRES_REPLICATION_USER` in `.env` — both files have comments
   pointing at each other as a reminder.
+- **Long statements:** HAProxy closes a connection that stays silent for 30
+  minutes (`timeout client` and `timeout server` on the two PostgreSQL
+  endpoints), so a single statement may run that long (a migration, an index
+  build, a bulk load). The stats page keeps the default 30 s.
