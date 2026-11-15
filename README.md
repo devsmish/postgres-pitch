@@ -113,7 +113,8 @@ options: [docker-compose/README.md](./docker-compose/README.md).
 > for `make up`, `bash tests/access_patterns_test.sh` for
 > `make access-test`, `bash tests/failover_test.sh` for
 > `make failover-test`, `bash tests/migrate_test.sh` for
-> `make migrate-test`. For `make migrate`, run
+> `make migrate-test`, `bash tests/partitions_test.sh` for
+> `make partitions-test`. For `make migrate`, run
 > `cd docker-compose` and then
 > `docker compose --env-file ../.env run --rm -T sqitch deploy`.
 
@@ -293,7 +294,8 @@ postgres-pitch/
 │   ├── migrations/      # Sqitch: sqitch.plan, deploy/, revert/, verify/ (make migrate)
 │   └── seed/            # initial data load (Iteration 2, in progress)
 ├── tests/               # access_patterns_test.sh, failover_test.sh,
-│                        # migration_path_test.sh, migrate_test.sh
+│                        # migration_path_test.sh, migrate_test.sh,
+│                        # partitions_test.sh
 ├── docs/                # architecture, access patterns, failover notes, decisions/ (ADRs)
 ├── .github/             # CI (lint), issue and PR templates
 ├── Makefile             # make up / down / reset / status / migrate / *-test / lint
