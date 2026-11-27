@@ -10,3 +10,5 @@ matches_and_events [enum_types clubs_competitions_seasons players_and_careers] 2
 standings_view [matches_and_events] 2026-10-25T17:56:59Z devsmish <devsmish@users.noreply.github.com> # Standings materialized view and its unique index
 indexes [players_and_careers matches_and_events] 2026-10-25T17:57:00Z devsmish <devsmish@users.noreply.github.com> # Secondary indexes
 yearly_partitions [matches_and_events] 2026-11-12T09:00:00Z devsmish <devsmish@users.noreply.github.com> # Yearly partitions of matches and match_events for 1872-2027
+create_year_partitions [yearly_partitions] 2026-11-17T09:00:00Z devsmish <devsmish@users.noreply.github.com> # Function to create the missing yearly partitions
+partition_job [create_year_partitions] 2026-11-27T11:09:00Z devsmish <devsmish@users.noreply.github.com> # Annual pg_cron job that creates the partitions for the coming years

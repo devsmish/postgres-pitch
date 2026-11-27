@@ -50,7 +50,11 @@ That script is kept, frozen, as the reference for this comparison; do not edit i
 | Change | Contains |
 |---|---|
 | `yearly_partitions` | a yearly partition of `matches` and `match_events` for every year from 1872 to 2027 (the baseline has 2024-2026 plus the default one). Why this range: [DATA_SOURCES.md](../../DATA_SOURCES.md) |
+| `create_year_partitions` | the function `create_year_partitions(from_year, to_year)`: creates the missing yearly partitions, returns how many tables it created, safe to run again |
+| `partition_job` | the pg_cron job `ensure-year-partitions` (31 December, 20:00 UTC). It does something only in the database pg_cron serves, and prints a notice everywhere else |
 
+The partition job and its runbook: [ADR 0005](../../docs/decisions/0005-pg-cron-for-the-annual-partition-job.md),
+[partition-maintenance.md](../../docs/runbooks/partition-maintenance.md).
 ## Partitions
 
 Partitions are named `<table>_<year>` (`matches_1872`, `match_events_2027`) and
@@ -63,7 +67,8 @@ one (all checked on PostgreSQL 16.15):
   the session that runs the statement, so the partition would depend on where it
   was created. A partition built that way next to UTC ones fails with an overlap
   error.
-- **Create a partition before data for its year arrives.** Rows outside every
+- **Create a partition before data for its year arrives** (the annual job and
+  `create_year_partitions` do that). Rows outside every
   partition go to the default one, and then
   `CREATE TABLE ... PARTITION OF` for that range fails with "updated partition
   constraint for default partition ... would be violated by some row". An empty
@@ -131,9 +136,11 @@ make -C .. migrate-verify      # confirms the objects are really there
 - `bash tests/migrate_test.sh`: the baseline equals `001`, revert and redeploy,
   the later changes deploy, verify and revert back to exactly `001`,
   `make migrate` is a no-op the second time, default privileges, and the same
-  after a switchover.
+  after a switchover, where also a pg_cron probe job must keep running on the
+  new primary.
 - `bash tests/partitions_test.sh` (`make partitions-test`): the yearly partitions
   exist with UTC bounds, rows at year edges land in the right partition, a date
   range reads only its partitions, and the roles have the right privileges on
-  them.
+  them; the partitions of the current and next year exist, the default partitions
+  are empty, `create_year_partitions` behaves, and pg_cron is set up and fires jobs.
 - `bash tests/migration_path_test.sh`: how Sqitch reaches the cluster (ADR 0004).

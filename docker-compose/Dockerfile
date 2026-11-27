@@ -14,7 +14,14 @@ ARG POSTGRES_VERSION=16
 FROM postgres:${POSTGRES_VERSION}-bookworm
 
 ARG PATRONI_VERSION=4.1.3
+# An ARG declared before FROM is not visible inside the stage: declare it again
+# (it keeps the value given above).
+ARG POSTGRES_VERSION
 
+# postgresql-<major>-cron is pg_cron (ADR 0005): the scheduler of the annual
+# partition job. It comes from the PostgreSQL apt repository that the official
+# image already has configured, and it is loaded by shared_preload_libraries
+# in patroni/patroni.yml.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         python3 \
@@ -22,6 +29,7 @@ RUN apt-get update \
         python3-venv \
         curl \
         gosu \
+        "postgresql-${POSTGRES_VERSION}-cron" \
     && rm -rf /var/lib/apt/lists/*
 
 # Patroni lives in its own venv so its pinned dependencies never collide

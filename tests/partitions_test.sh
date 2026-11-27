@@ -1,9 +1,10 @@
 #!/bin/bash
 # tests/partitions_test.sh
 #
-# Checks the yearly partitions of matches and match_events (change
-# `yearly_partitions`, see db/migrations/ and DATA_SOURCES.md) on the running
-# cluster. Four parts:
+# Checks the yearly partitions of matches and match_events (changes
+# `yearly_partitions`, `create_year_partitions` and `partition_job`, see
+# db/migrations/, DATA_SOURCES.md and ADR 0005) on the running cluster. Six
+# parts:
 #
 #   1. Layout. The verify script of the change passes: every year from 1872 to
 #      2027 has a partition named <table>_<year> with bounds at UTC midnight,
@@ -20,8 +21,20 @@
 #      years.
 #   4. Privileges. etl_writer and analytics_readonly have the same rights on a
 #      new partition as on the baseline tables (default privileges).
+#   5. The rule and the function. Partitions for the current and the next
+#      calendar year exist (if this fails after 31 December, the annual job did
+#      not run), the default partitions are empty, and create_year_partitions()
+#      creates what is missing, does nothing the second time, refuses a year
+#      too far ahead, and is closed to the demo roles; the function is tried in
+#      rolled-back transactions.
+#   6. The scheduler. pg_cron is preloaded on every node and serves this
+#      database, the annual job is registered, its command works, and pg_cron
+#      really fires jobs here (a probe job runs every 5 s for a few seconds).
+#      If this part fails on a cluster created before ADR 0005, rebuild the
+#      image and recreate the cluster: docs/runbooks/partition-maintenance.md.
 #
-# This test only reads, apart from the rolled-back transaction in part 2.
+# This test only reads, apart from rolled-back transactions and a probe job in
+# part 6 that is removed again (with its run history).
 #
 # All queries run through `docker exec` inside one of the cluster's own
 # containers (on the compose network, where `haproxy` resolves) and through the
@@ -91,6 +104,15 @@ run_sql() {
     psql -h haproxy -p "$WRITE_PORT" -U "$POSTGRES_USER" -d "$DB" -tAqX -v ON_ERROR_STOP=1 -c "$1" 2>&1
 }
 
+# run_sql_on <node> <sql> -> output: asks one node directly (not through
+# HAProxy), so a setting can be read on a replica too.
+run_sql_on() {
+  local c
+  c=$(exec_container) || { echo "no running cluster container"; return 99; }
+  docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$c" \
+    psql -h "$1" -p 5432 -U "$POSTGRES_USER" -d "$DB" -tAqX -v ON_ERROR_STOP=1 -c "$2" 2>&1
+}
+
 # run_file <path> -> output; psql's exit code. The file is sent on stdin, as one session.
 run_file() {
   local c
@@ -100,7 +122,12 @@ run_file() {
 }
 
 TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
+PROBE_JOB="partitions-test-probe"
+remove_probe() {
+  run_sql "WITH gone AS (SELECT jobid FROM cron.job WHERE jobname = '${PROBE_JOB}'), unscheduled AS (SELECT cron.unschedule(jobid) FROM gone) SELECT count(*) FROM unscheduled" >/dev/null 2>&1
+  run_sql "DELETE FROM cron.job_run_details WHERE jobid NOT IN (SELECT jobid FROM cron.job)" >/dev/null 2>&1
+}
+trap 'remove_probe; rm -rf "$TMP"' EXIT
 
 # scanned_tables: the partitions a plan mentions. The plan is cut into words and
 # only exact partition names are kept, so index names (matches_2000_pkey) and the
@@ -228,6 +255,119 @@ if [ $rc -eq 0 ] && [ "$OUT" = "$EXPECTED" ]; then
   pass "etl_writer: INSERT/UPDATE yes, DELETE no; analytics_readonly: SELECT only (on partitions from the new change)"
 else
   fail "unexpected privileges: got '${OUT}', expected '${EXPECTED}' (etl INSERT, etl UPDATE, etl DELETE, analytics SELECT x2, analytics INSERT)"
+fi
+
+# 5. the rule, the default partitions and the function
+
+echo ""
+echo "--- 5. the current and the next year, empty default partitions, the function that creates partitions ---"
+THIS_YEAR=$(run_sql "SELECT extract(year FROM now() AT TIME ZONE 'UTC')::INTEGER")
+NEXT_YEAR=$((THIS_YEAR + 1))
+OUT=$(run_sql "SELECT count(*) FROM pg_class WHERE relname IN ('matches_${THIS_YEAR}', 'matches_${NEXT_YEAR}', 'match_events_${THIS_YEAR}', 'match_events_${NEXT_YEAR}')")
+if [ "$OUT" = "4" ]; then
+  pass "matches and match_events have partitions for ${THIS_YEAR} and ${NEXT_YEAR}"
+else
+  fail "partitions for ${THIS_YEAR} and ${NEXT_YEAR} are incomplete (found ${OUT:-?} of 4): did the annual job not run? SELECT create_year_partitions(${NEXT_YEAR}, $((THIS_YEAR + 2))) on the primary fixes it"
+fi
+
+# rows in a default partition block creating the partition of their year
+OUT=$(run_sql "SELECT (SELECT count(*) FROM matches_default) + (SELECT count(*) FROM match_events_default)")
+if [ "$OUT" = "0" ]; then
+  pass "the default partitions are empty"
+else
+  fail "the default partitions hold ${OUT:-?} rows: creating the partitions of their years fails until they are moved (docs/runbooks/partition-maintenance.md)"
+fi
+
+OUT=$(run_sql "SELECT create_year_partitions(${THIS_YEAR}, ${NEXT_YEAR})")
+if [ "$OUT" = "0" ]; then
+  pass "create_year_partitions(${THIS_YEAR}, ${NEXT_YEAR}) creates nothing, everything is there (returns 0)"
+else
+  fail "create_year_partitions(${THIS_YEAR}, ${NEXT_YEAR}) returned '$(echo "$OUT" | head -n 1)' (expected 0). Is the change create_year_partitions deployed? (make migrate)"
+fi
+
+# a year that has no partitions yet, to try the function on (in a transaction that is rolled back)
+FAR_YEAR=$(run_sql "SELECT min(g) FROM generate_series(${THIS_YEAR} + 3, ${THIS_YEAR} + 10) AS g WHERE to_regclass(format('public.matches_%s', g)) IS NULL AND to_regclass(format('public.match_events_%s', g)) IS NULL")
+if [[ "$FAR_YEAR" =~ ^[0-9]+$ ]]; then
+  {
+    echo "SET client_min_messages = warning;"
+    echo "BEGIN;"
+    echo "SELECT create_year_partitions(${FAR_YEAR}, ${FAR_YEAR});"
+    echo "SELECT create_year_partitions(${FAR_YEAR}, ${FAR_YEAR});"
+    echo "ROLLBACK;"
+  } > "$TMP/function.sql"
+  OUT=$(run_file "$TMP/function.sql" | tr '\n' ' ')
+  if [ "$OUT" = "2 0 " ]; then
+    pass "create_year_partitions creates the 2 missing tables of ${FAR_YEAR} (returns 2), the second call creates none (returns 0); rolled back"
+  else
+    fail "create_year_partitions returned '${OUT}' for ${FAR_YEAR} (expected '2 0 ')"
+  fi
+
+  {
+    echo "BEGIN;"
+    echo "SET ROLE etl_writer;"
+    echo "SELECT create_year_partitions(${FAR_YEAR}, ${FAR_YEAR});"
+    echo "ROLLBACK;"
+  } > "$TMP/denied.sql"
+  OUT=$(run_file "$TMP/denied.sql"); rc=$?
+  if [ $rc -ne 0 ] && echo "$OUT" | grep -q "permission denied for function"; then
+    pass "etl_writer cannot run create_year_partitions (permission denied)"
+  else
+    fail "etl_writer was not refused (rc=$rc): $(echo "$OUT" | head -n 1)"
+  fi
+else
+  fail "no free year between ${THIS_YEAR}+3 and ${THIS_YEAR}+10 to try the function on"
+fi
+
+OUT=$(run_sql "SELECT create_year_partitions(${THIS_YEAR}, ${THIS_YEAR} + 11)"); rc=$?
+if [ $rc -ne 0 ] && echo "$OUT" | grep -q "refusing to create partitions"; then
+  pass "a year more than 10 years ahead is refused"
+else
+  fail "a year 11 years ahead was not refused (rc=$rc): $(echo "$OUT" | head -n 1)"
+fi
+
+# 6. the scheduler
+
+echo ""
+echo "--- 6. pg_cron schedules the annual job on the primary ---"
+for n in "${NODES[@]}"; do
+  OUT=$(run_sql_on "$n" "SELECT current_setting('shared_preload_libraries') || ' | ' || coalesce(current_setting('cron.database_name', true), '(not set)')"); rc=$?
+  if [ $rc -eq 0 ] && echo "$OUT" | grep -q "pg_cron" && [ "${OUT##*| }" = "$DB" ]; then
+    pass "${n}: pg_cron is preloaded and serves ${DB}"
+  else
+    fail "${n}: pg_cron is not set up here (got '$(echo "$OUT" | head -n 1)'). The cluster needs the new image and parameters: docs/runbooks/partition-maintenance.md"
+  fi
+done
+
+OUT=$(run_sql "SELECT count(*) FROM cron.job WHERE jobname = 'ensure-year-partitions' AND schedule = '0 20 31 12 *' AND active AND database = current_database()"); rc=$?
+if [ $rc -eq 0 ] && [ "$OUT" = "1" ]; then
+  pass "the job ensure-year-partitions is registered: 31 December, 20:00 UTC, active"
+else
+  fail "the annual job is not registered (rc=$rc, answer '$(echo "$OUT" | head -n 1)'). make migrate schedules it once pg_cron is set up"
+fi
+
+CMD=$(run_sql "SELECT command FROM cron.job WHERE jobname = 'ensure-year-partitions'")
+{
+  echo "SET client_min_messages = warning;"
+  echo "BEGIN;"
+  echo "${CMD};"
+  echo "ROLLBACK;"
+} > "$TMP/jobcmd.sql"
+OUT=$(run_file "$TMP/jobcmd.sql" | tr -d '[:space:]')
+if [[ "$OUT" =~ ^[0-9]+$ ]]; then
+  pass "the command of the job runs (rolled back; it would create ${OUT} tables now)"
+else
+  fail "the command of the job failed or returned '$(echo "$OUT" | cut -c1-80)'"
+fi
+
+run_sql "SELECT cron.schedule('${PROBE_JOB}', '5 seconds', 'SELECT 1')" >/dev/null
+echo "    probe job scheduled every 5 s, waiting 14 s..."
+sleep 14
+OUT=$(run_sql "SELECT count(*) FROM cron.job_run_details d JOIN cron.job j USING (jobid) WHERE j.jobname = '${PROBE_JOB}' AND d.status = 'succeeded'")
+remove_probe
+if [[ "$OUT" =~ ^[0-9]+$ ]] && [ "$OUT" -ge 1 ]; then
+  pass "pg_cron fired the probe job ${OUT} time(s) on the primary; the probe job and its history are removed"
+else
+  fail "pg_cron did not run the probe job (answer: '$(echo "$OUT" | head -n 1)'); see the postgres log of the primary"
 fi
 
 echo ""

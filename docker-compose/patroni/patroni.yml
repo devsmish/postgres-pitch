@@ -34,6 +34,20 @@ bootstrap:
         max_replication_slots: 10
         wal_keep_size: 128MB
         max_connections: 100
+        # pg_cron runs the annual partition job (ADR 0005). It has to be
+        # preloaded, and it serves ONE database: cron.database_name MUST be the
+        # POSTGRES_DB of .env (default postgres_pitch), which cannot be
+        # substituted here (same as the literal "replicator" in pg_hba below).
+        # Background workers mean no connection, so no password or pg_hba entry
+        # is involved. The job runs only on the primary, and after a failover on
+        # the new one. The days and hours are UTC.
+        # These settings reach a cluster only when it is bootstrapped; for an
+        # existing one see docs/runbooks/partition-maintenance.md.
+        shared_preload_libraries: pg_cron
+        cron.database_name: postgres_pitch
+        cron.use_background_workers: "on"
+        cron.timezone: UTC
+        max_worker_processes: 16
 
   initdb:
     - encoding: UTF8
