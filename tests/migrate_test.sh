@@ -17,7 +17,10 @@
 #      UPDATE but not DELETE, analytics_readonly can SELECT, the Sqitch registry
 #      is not visible to either.
 #   4. The same after a real `patronictl switchover`: `deploy` still reaches the
-#      new primary and is a no-op, with unchanged settings.
+#      new primary and is a no-op, with unchanged settings. A probe job
+#      scheduled in pg_cron before the switchover keeps running on the new
+#      primary afterwards (ADR 0005); this needs pg_cron to be set up, see
+#      docs/runbooks/partition-maintenance.md.
 #
 # Part 1 uses scratch databases that are removed on exit. Parts 2-4 work on the
 # real database: part 2 leaves every change deployed, which is its normal state
@@ -165,6 +168,19 @@ dump_schema() {
 TMP=""
 LEADER=""
 SCRATCH_CREATED=""
+PROBE_JOB="migrate-test-probe"
+PROBE_SCHEDULED=""
+
+# Removes the probe job of part 4 and the run history it left (best effort; it
+# is also called on exit, so a failed run does not leave the job behind).
+remove_probe() {
+  [ -n "$PROBE_SCHEDULED" ] || return 0
+  run_sql "$WRITE_PORT" "$POSTGRES_USER" "$POSTGRES_PASSWORD" \
+    "WITH gone AS (SELECT jobid FROM cron.job WHERE jobname = '${PROBE_JOB}'), unscheduled AS (SELECT cron.unschedule(jobid) FROM gone) SELECT count(*) FROM unscheduled" >/dev/null 2>&1
+  run_sql "$WRITE_PORT" "$POSTGRES_USER" "$POSTGRES_PASSWORD" \
+    "DELETE FROM cron.job_run_details WHERE jobid NOT IN (SELECT jobid FROM cron.job)" >/dev/null 2>&1
+  PROBE_SCHEDULED=""
+}
 
 drop_scratch() {
   [ -n "$SCRATCH_CREATED" ] && [ -n "$LEADER" ] || return 0
@@ -173,6 +189,7 @@ drop_scratch() {
 }
 
 cleanup() {
+  remove_probe
   drop_scratch
   [ -n "$TMP" ] && rm -rf "$TMP"
 }
@@ -328,6 +345,13 @@ fi
 
 echo ""
 echo "--- 4. deploy after a switchover (same settings) ---"
+OUT=$(run_sql "$WRITE_PORT" "$POSTGRES_USER" "$POSTGRES_PASSWORD" "SELECT cron.schedule('${PROBE_JOB}', '5 seconds', 'SELECT 1')"); rc=$?
+if [ $rc -eq 0 ]; then
+  PROBE_SCHEDULED=1
+  pass "a probe job is scheduled in pg_cron (every 5 s) before the switchover"
+else
+  fail "could not schedule the probe job in pg_cron: $(echo "$OUT" | head -n 1). Is pg_cron set up? docs/runbooks/partition-maintenance.md"
+fi
 echo "==> Switchover: $LEADER -> $CANDIDATE"
 if ! docker exec "${CONTAINER_PREFIX}${LEADER}" patronictl -c /etc/patroni.yml switchover \
      --leader "$LEADER" --candidate "$CANDIDATE" --force >/dev/null 2>&1; then
@@ -345,6 +369,7 @@ else
   done
   if [ -n "$CONVERGED" ]; then
     pass "the alias reaches the new primary ($CANDIDATE) after ${CONVERGED}s"
+    PROBE_FROM=$(run_sql "$WRITE_PORT" "$POSTGRES_USER" "$POSTGRES_PASSWORD" "SELECT now()")
     OUT=$(sq deploy); rc=$?
     if [ $rc -eq 0 ] && echo "$OUT" | grep -qi "nothing to deploy"; then
       pass "deploy on the new primary is a no-op, no setting changed"
@@ -353,10 +378,21 @@ else
     fi
     OUT=$(sq verify); rc=$?
     if [ $rc -eq 0 ]; then pass "sqitch verify passes on the new primary"; else fail "verify after the switchover failed: $(echo "$OUT" | tail -n 2 | tr '\n' ' ')"; fi
+    if [ -n "$PROBE_SCHEDULED" ]; then
+      echo "    waiting 14 s for the probe job to run on the new primary..."
+      sleep 14
+      OUT=$(run_sql "$WRITE_PORT" "$POSTGRES_USER" "$POSTGRES_PASSWORD" "SELECT count(*) FROM cron.job_run_details d JOIN cron.job j USING (jobid) WHERE j.jobname = '${PROBE_JOB}' AND d.status = 'succeeded' AND d.start_time > '${PROBE_FROM}'::timestamptz")
+      if [[ "$OUT" =~ ^[0-9]+$ ]] && [ "$OUT" -ge 1 ]; then
+        pass "the probe job kept running on the new primary after the switchover (${OUT} successful runs since it was promoted), without any change or restart"
+      else
+        fail "the probe job did not run on the new primary after the switchover (answer: '$(echo "$OUT" | head -n 1)')"
+      fi
+    fi
   else
     fail "the alias did not reach a primary within ${TIMEOUT_SECONDS}s after the switchover"
   fi
 fi
+remove_probe
 
 # results
 

@@ -134,10 +134,11 @@ make -C .. migrate-verify      # confirms the objects are really there
 - `bash tests/migrate_test.sh`: the baseline equals `001`, revert and redeploy,
   the later changes deploy, verify and revert back to exactly `001`,
   `make migrate` is a no-op the second time, default privileges, and the same
-  after a switchover.
+  after a switchover, where also a pg_cron probe job must keep running on the
+  new primary.
 - `bash tests/partitions_test.sh` (`make partitions-test`): the yearly partitions
   exist with UTC bounds, rows at year edges land in the right partition, a date
   range reads only its partitions, and the roles have the right privileges on
   them; the partitions of the current and next year exist, the default partitions
-  are empty, and `create_year_partitions` behaves.
+  are empty, `create_year_partitions` behaves, and pg_cron is set up and fires jobs.
 - `bash tests/migration_path_test.sh`: how Sqitch reaches the cluster (ADR 0004).
