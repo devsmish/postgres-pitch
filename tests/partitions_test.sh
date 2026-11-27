@@ -1,9 +1,9 @@
 #!/bin/bash
 # tests/partitions_test.sh
 #
-# Checks the yearly partitions of matches and match_events (change
-# `yearly_partitions`, see db/migrations/ and DATA_SOURCES.md) on the running
-# cluster. Four parts:
+# Checks the yearly partitions of matches and match_events (changes
+# `yearly_partitions` and `create_year_partitions`, see db/migrations/ and
+# DATA_SOURCES.md) on the running cluster. Five parts:
 #
 #   1. Layout. The verify script of the change passes: every year from 1872 to
 #      2027 has a partition named <table>_<year> with bounds at UTC midnight,
@@ -20,8 +20,14 @@
 #      years.
 #   4. Privileges. etl_writer and analytics_readonly have the same rights on a
 #      new partition as on the baseline tables (default privileges).
+#   5. The rule and the function. Partitions for the current and the next
+#      calendar year exist (if this fails after 31 December, the annual job did
+#      not run), the default partitions are empty, and create_year_partitions()
+#      creates what is missing, does nothing the second time, refuses a year
+#      too far ahead, and is closed to the demo roles; the function is tried in
+#      rolled-back transactions.
 #
-# This test only reads, apart from the rolled-back transaction in part 2.
+# This test only reads, apart from the rolled-back transactions in parts 2 and 5.
 #
 # All queries run through `docker exec` inside one of the cluster's own
 # containers (on the compose network, where `haproxy` resolves) and through the
@@ -228,6 +234,74 @@ if [ $rc -eq 0 ] && [ "$OUT" = "$EXPECTED" ]; then
   pass "etl_writer: INSERT/UPDATE yes, DELETE no; analytics_readonly: SELECT only (on partitions from the new change)"
 else
   fail "unexpected privileges: got '${OUT}', expected '${EXPECTED}' (etl INSERT, etl UPDATE, etl DELETE, analytics SELECT x2, analytics INSERT)"
+fi
+
+# 5. the rule, the default partitions and the function
+
+echo ""
+echo "--- 5. the current and the next year, empty default partitions, the function that creates partitions ---"
+THIS_YEAR=$(run_sql "SELECT extract(year FROM now() AT TIME ZONE 'UTC')::INTEGER")
+NEXT_YEAR=$((THIS_YEAR + 1))
+OUT=$(run_sql "SELECT count(*) FROM pg_class WHERE relname IN ('matches_${THIS_YEAR}', 'matches_${NEXT_YEAR}', 'match_events_${THIS_YEAR}', 'match_events_${NEXT_YEAR}')")
+if [ "$OUT" = "4" ]; then
+  pass "matches and match_events have partitions for ${THIS_YEAR} and ${NEXT_YEAR}"
+else
+  fail "partitions for ${THIS_YEAR} and ${NEXT_YEAR} are incomplete (found ${OUT:-?} of 4): did the annual job not run? SELECT create_year_partitions(${NEXT_YEAR}, $((THIS_YEAR + 2))) on the primary fixes it"
+fi
+
+# rows in a default partition block creating the partition of their year
+OUT=$(run_sql "SELECT (SELECT count(*) FROM matches_default) + (SELECT count(*) FROM match_events_default)")
+if [ "$OUT" = "0" ]; then
+  pass "the default partitions are empty"
+else
+  fail "the default partitions hold ${OUT:-?} rows: creating the partitions of their years fails until they are moved (docs/runbooks/partition-maintenance.md)"
+fi
+
+OUT=$(run_sql "SELECT create_year_partitions(${THIS_YEAR}, ${NEXT_YEAR})")
+if [ "$OUT" = "0" ]; then
+  pass "create_year_partitions(${THIS_YEAR}, ${NEXT_YEAR}) creates nothing, everything is there (returns 0)"
+else
+  fail "create_year_partitions(${THIS_YEAR}, ${NEXT_YEAR}) returned '$(echo "$OUT" | head -n 1)' (expected 0). Is the change create_year_partitions deployed? (make migrate)"
+fi
+
+# a year that has no partitions yet, to try the function on (in a transaction that is rolled back)
+FAR_YEAR=$(run_sql "SELECT min(g) FROM generate_series(${THIS_YEAR} + 3, ${THIS_YEAR} + 10) AS g WHERE to_regclass(format('public.matches_%s', g)) IS NULL AND to_regclass(format('public.match_events_%s', g)) IS NULL")
+if [[ "$FAR_YEAR" =~ ^[0-9]+$ ]]; then
+  {
+    echo "SET client_min_messages = warning;"
+    echo "BEGIN;"
+    echo "SELECT create_year_partitions(${FAR_YEAR}, ${FAR_YEAR});"
+    echo "SELECT create_year_partitions(${FAR_YEAR}, ${FAR_YEAR});"
+    echo "ROLLBACK;"
+  } > "$TMP/function.sql"
+  OUT=$(run_file "$TMP/function.sql" | tr '\n' ' ')
+  if [ "$OUT" = "2 0 " ]; then
+    pass "create_year_partitions creates the 2 missing tables of ${FAR_YEAR} (returns 2), the second call creates none (returns 0); rolled back"
+  else
+    fail "create_year_partitions returned '${OUT}' for ${FAR_YEAR} (expected '2 0 ')"
+  fi
+
+  {
+    echo "BEGIN;"
+    echo "SET ROLE etl_writer;"
+    echo "SELECT create_year_partitions(${FAR_YEAR}, ${FAR_YEAR});"
+    echo "ROLLBACK;"
+  } > "$TMP/denied.sql"
+  OUT=$(run_file "$TMP/denied.sql"); rc=$?
+  if [ $rc -ne 0 ] && echo "$OUT" | grep -q "permission denied for function"; then
+    pass "etl_writer cannot run create_year_partitions (permission denied)"
+  else
+    fail "etl_writer was not refused (rc=$rc): $(echo "$OUT" | head -n 1)"
+  fi
+else
+  fail "no free year between ${THIS_YEAR}+3 and ${THIS_YEAR}+10 to try the function on"
+fi
+
+OUT=$(run_sql "SELECT create_year_partitions(${THIS_YEAR}, ${THIS_YEAR} + 11)"); rc=$?
+if [ $rc -ne 0 ] && echo "$OUT" | grep -q "refusing to create partitions"; then
+  pass "a year more than 10 years ahead is refused"
+else
+  fail "a year 11 years ahead was not refused (rc=$rc): $(echo "$OUT" | head -n 1)"
 fi
 
 echo ""

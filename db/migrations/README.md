@@ -50,6 +50,7 @@ That script is kept, frozen, as the reference for this comparison; do not edit i
 | Change | Contains |
 |---|---|
 | `yearly_partitions` | a yearly partition of `matches` and `match_events` for every year from 1872 to 2027 (the baseline has 2024-2026 plus the default one). Why this range: [DATA_SOURCES.md](../../DATA_SOURCES.md) |
+| `create_year_partitions` | the function `create_year_partitions(from_year, to_year)`: creates the missing yearly partitions, returns how many tables it created, safe to run again |
 
 ## Partitions
 
@@ -63,7 +64,8 @@ one (all checked on PostgreSQL 16.15):
   the session that runs the statement, so the partition would depend on where it
   was created. A partition built that way next to UTC ones fails with an overlap
   error.
-- **Create a partition before data for its year arrives.** Rows outside every
+- **Create a partition before data for its year arrives** (`create_year_partitions`
+  does that). Rows outside every
   partition go to the default one, and then
   `CREATE TABLE ... PARTITION OF` for that range fails with "updated partition
   constraint for default partition ... would be violated by some row". An empty
@@ -135,5 +137,6 @@ make -C .. migrate-verify      # confirms the objects are really there
 - `bash tests/partitions_test.sh` (`make partitions-test`): the yearly partitions
   exist with UTC bounds, rows at year edges land in the right partition, a date
   range reads only its partitions, and the roles have the right privileges on
-  them.
+  them; the partitions of the current and next year exist, the default partitions
+  are empty, and `create_year_partitions` behaves.
 - `bash tests/migration_path_test.sh`: how Sqitch reaches the cluster (ADR 0004).
