@@ -53,6 +53,8 @@ That script is kept, frozen, as the reference for this comparison; do not edit i
 | `create_year_partitions` | the function `create_year_partitions(from_year, to_year)`: creates the missing yearly partitions, returns how many tables it created, safe to run again |
 | `partition_job` | the pg_cron job `ensure-year-partitions` (31 December, 20:00 UTC). It does something only in the database pg_cron serves, and prints a notice everywhere else |
 
+The partition job and its runbook: [ADR 0005](../../docs/decisions/0005-pg-cron-for-the-annual-partition-job.md),
+[partition-maintenance.md](../../docs/runbooks/partition-maintenance.md).
 ## Partitions
 
 Partitions are named `<table>_<year>` (`matches_1872`, `match_events_2027`) and
