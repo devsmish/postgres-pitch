@@ -259,7 +259,7 @@ else
   fi
 
   OUT=$(sq_direct "$LEADER" deploy "db:pg:${SCRATCH_SQITCH}"); rc=$?
-  if [ $rc -eq 0 ]; then pass "the changes after the baseline deploy on top of it (yearly_partitions)"; else fail "deploy of the later changes failed: $(echo "$OUT" | tail -n 2 | tr '\n' ' ')"; fi
+  if [ $rc -eq 0 ]; then pass "the changes after the baseline deploy on top of it (yearly_partitions, create_year_partitions, partition_job)"; else fail "deploy of the later changes failed: $(echo "$OUT" | tail -n 2 | tr '\n' ' ')"; fi
 
   OUT=$(sq_direct "$LEADER" verify "db:pg:${SCRATCH_SQITCH}"); rc=$?
   if [ $rc -eq 0 ]; then pass "sqitch verify passes for every change, the later ones included"; else fail "sqitch verify failed after the later changes: $(echo "$OUT" | tail -n 3 | tr '\n' ' ')"; fi

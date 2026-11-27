@@ -51,6 +51,7 @@ That script is kept, frozen, as the reference for this comparison; do not edit i
 |---|---|
 | `yearly_partitions` | a yearly partition of `matches` and `match_events` for every year from 1872 to 2027 (the baseline has 2024-2026 plus the default one). Why this range: [DATA_SOURCES.md](../../DATA_SOURCES.md) |
 | `create_year_partitions` | the function `create_year_partitions(from_year, to_year)`: creates the missing yearly partitions, returns how many tables it created, safe to run again |
+| `partition_job` | the pg_cron job `ensure-year-partitions` (31 December, 20:00 UTC). It does something only in the database pg_cron serves, and prints a notice everywhere else |
 
 ## Partitions
 
@@ -64,8 +65,8 @@ one (all checked on PostgreSQL 16.15):
   the session that runs the statement, so the partition would depend on where it
   was created. A partition built that way next to UTC ones fails with an overlap
   error.
-- **Create a partition before data for its year arrives** (`create_year_partitions`
-  does that). Rows outside every
+- **Create a partition before data for its year arrives** (the annual job and
+  `create_year_partitions` do that). Rows outside every
   partition go to the default one, and then
   `CREATE TABLE ... PARTITION OF` for that range fails with "updated partition
   constraint for default partition ... would be violated by some row". An empty
